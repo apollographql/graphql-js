@@ -16,8 +16,8 @@ jobs:
         displayName: 'Install Node.js'
 
       - script: |
-          npm run azure
-        displayName: 'npm run azure'
+          npm ci && npm testonly
+        displayName: 'npm ci && npm testonly'
 
   - job: ubuntu_node_10
 
@@ -31,8 +31,8 @@ jobs:
         displayName: 'Install Node.js'
 
       - script: |
-          npm run azure
-        displayName: 'npm run azure'
+          npm ci && npm test:ci
+        displayName: 'npm ci && npm test:ci'
 
   - job: ubuntu_node_8
 
@@ -46,8 +46,8 @@ jobs:
         displayName: 'Install Node.js'
 
       - script: |
-          npm run azure
-        displayName: 'npm run azure'
+          npm install && npm testonly
+        displayName: 'npm install && npm testonly'
 
   - job: ubuntu_node_6
 
@@ -61,5 +61,5 @@ jobs:
         displayName: 'Install Node.js'
 
       - script: |
-          npm run azure
-        displayName: 'npm run azure'
+          npm install && npm testonly
+        displayName: 'npm install && npm testonly'
