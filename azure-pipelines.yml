@@ -16,8 +16,8 @@ jobs:
         displayName: 'Install Node.js'
 
       - script: |
-          npm ci && npm testonly
-        displayName: 'npm ci && npm testonly'
+          npm ci && npm run testonly
+        displayName: 'npm ci && npm run testonly'
 
   - job: ubuntu_node_10
 
@@ -31,8 +31,8 @@ jobs:
         displayName: 'Install Node.js'
 
       - script: |
-          npm ci && npm test:ci
-        displayName: 'npm ci && npm test:ci'
+          npm ci && npm run test:ci
+        displayName: 'npm ci && npm run test:ci'
 
   - job: ubuntu_node_8
 
@@ -46,8 +46,8 @@ jobs:
         displayName: 'Install Node.js'
 
       - script: |
-          npm install && npm testonly
-        displayName: 'npm install && npm testonly'
+          npm install && npm run testonly
+        displayName: 'npm install && npm run testonly'
 
   - job: ubuntu_node_6
 
@@ -61,5 +61,5 @@ jobs:
         displayName: 'Install Node.js'
 
       - script: |
-          npm install && npm testonly
-        displayName: 'npm install && npm testonly'
+          npm install && npm run testonly
+        displayName: 'npm install && npm run testonly'
