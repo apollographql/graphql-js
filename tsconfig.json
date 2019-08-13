@@ -1,0 +1,9 @@
+// Bit of a dummy config, needed for getting https://github.com/quizlet/ts-migration working
+{
+  "compilerOptions": {
+    "strict": true,
+    "module": "es6",
+    "target": "es2016"
+  },
+  "include": ["src/"]
+}

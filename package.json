@@ -40,7 +40,11 @@
     "gitpublish": ". ./resources/gitpublish.sh"
   },
   "dependencies": {
-    "iterall": "^1.2.2"
+    "@babel/cli": "^7.5.5",
+    "babel-plugin-flow-to-typescript": "^0.4.0",
+    "commander": "^3.0.0",
+    "iterall": "^1.2.2",
+    "ts-migration": "git+ssh://git@github.com/quizlet/ts-migration.git"
   },
   "devDependencies": {
     "@babel/core": "7.5.5",
@@ -50,11 +54,12 @@
     "@babel/register": "7.5.5",
     "babel-eslint": "10.0.2",
     "chai": "4.2.0",
-    "eslint": "5.16.0",
+    "eslint": "^6.1.0",
     "eslint-plugin-flowtype": "3.12.1",
     "flow-bin": "0.105.1",
     "mocha": "6.2.0",
     "nyc": "14.1.1",
-    "prettier": "1.18.2"
+    "prettier": "1.18.2",
+    "typescript": "^3.5.3"
   }
 }
