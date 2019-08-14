@@ -34,6 +34,24 @@ jobs:
           npm ci && npm run test:ci
         displayName: 'npm ci && npm run test:ci'
 
+      - script: |
+          npm pack
+        workingDirectory: $(Build.SourcesDirectory)/build
+        displayName: 'npm pack'
+
+      - task: CopyFiles@2
+        inputs:
+          sourceFolder: '$(Build.SourcesDirectory)/build'
+          contents: '*.tgz'
+          targetFolder: $(Build.ArtifactStagingDirectory)/npm
+        displayName: 'Copy npm package'
+
+      - task: PublishBuildArtifacts@1
+        inputs:
+          pathtoPublish: '$(Build.ArtifactStagingDirectory)/npm'
+          artifactName: npm
+        displayName: 'Publish npm artifact'
+
   - job: ubuntu_node_8
 
     pool:
