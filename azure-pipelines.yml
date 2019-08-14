@@ -36,12 +36,12 @@ jobs:
 
       - script: |
           npm pack
-        workingDirectory: $(Build.SourcesDirectory)/build
+        workingDirectory: $(Build.SourcesDirectory)/dist
         displayName: 'npm pack'
 
       - task: CopyFiles@2
         inputs:
-          sourceFolder: '$(Build.SourcesDirectory)/build'
+          sourceFolder: '$(Build.SourcesDirectory)/dist'
           contents: '*.tgz'
           targetFolder: $(Build.ArtifactStagingDirectory)/npm
         displayName: 'Copy npm package'
