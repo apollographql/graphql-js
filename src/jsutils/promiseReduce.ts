@@ -1,0 +1,24 @@
+
+import isPromise from './isPromise';
+import { PromiseOrValue } from './PromiseOrValue';
+
+/**
+ * Similar to Array.prototype.reduce(), however the reducing callback may return
+ * a Promise, in which case reduction will continue after each promise resolves.
+ *
+ * If the callback does not return a Promise, then this function will also not
+ * return a Promise.
+ */
+export default function promiseReduce<T, U>(
+  values: ReadonlyArray<T>,
+  callback: (x0: U, x1: T) => PromiseOrValue<U>,
+  initialValue: PromiseOrValue<U>,
+): PromiseOrValue<U> {
+  return values.reduce(
+    (previous, value) =>
+      isPromise(previous)
+        ? previous.then(resolved => callback(resolved, value))
+        : callback(previous, value),
+    initialValue,
+  );
+}

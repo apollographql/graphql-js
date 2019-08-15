@@ -41,12 +41,15 @@
   },
   "dependencies": {
     "@babel/cli": "^7.5.5",
+    "@types/chai": "^4.2.0",
+    "@types/mocha": "^5.2.7",
     "babel-plugin-flow-to-typescript": "^0.4.0",
     "commander": "^3.0.0",
     "iterall": "^1.2.2",
     "ts-migration": "git+ssh://git@github.com/quizlet/ts-migration.git"
   },
   "devDependencies": {
+    "@types/node": "^12.7.1",
     "@babel/core": "7.5.5",
     "@babel/plugin-transform-flow-strip-types": "7.4.4",
     "@babel/polyfill": "7.4.4",
