@@ -1,13 +1,8 @@
-/**
- * Copyright (c) 2017-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
 import { $$asyncIterator, getAsyncIterator } from 'iterall';
+
+import { type PromiseOrValue } from '../jsutils/PromiseOrValue';
 
 /**
  * Given an AsyncIterable and a callback function, return an AsyncIterator
@@ -15,12 +10,13 @@ import { $$asyncIterator, getAsyncIterator } from 'iterall';
  */
 export default function mapAsyncIterator<T, U>(
   iterable: AsyncIterable<T>,
-  callback: T => Promise<U> | U,
-  rejectCallback?: any => Promise<U> | U,
+  callback: T => PromiseOrValue<U>,
+  rejectCallback?: any => PromiseOrValue<U>,
 ): AsyncGenerator<U, void, void> {
   const iterator = getAsyncIterator(iterable);
   let $return;
   let abruptClose;
+  // $FlowFixMe(>=0.68.0)
   if (typeof iterator.return === 'function') {
     $return = iterator.return;
     abruptClose = error => {
@@ -55,6 +51,7 @@ export default function mapAsyncIterator<T, U>(
         : Promise.resolve({ value: undefined, done: true });
     },
     throw(error) {
+      // $FlowFixMe(>=0.68.0)
       if (typeof iterator.throw === 'function') {
         return iterator.throw(error).then(mapResult, mapReject);
       }
@@ -68,7 +65,7 @@ export default function mapAsyncIterator<T, U>(
 
 function asyncMapValue<T, U>(
   value: T,
-  callback: T => Promise<U> | U,
+  callback: T => PromiseOrValue<U>,
 ): Promise<U> {
   return new Promise(resolve => resolve(callback(value)));
 }

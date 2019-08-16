@@ -1,25 +1,24 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// @flow strict
 
-import { describe, it } from 'mocha';
 import { expect } from 'chai';
-import { valueFromAST } from '../valueFromAST';
+import { describe, it } from 'mocha';
+
+import { parseValue } from '../../language/parser';
 import {
-  GraphQLEnumType,
-  GraphQLInputObjectType,
-  GraphQLList,
   GraphQLInt,
   GraphQLFloat,
   GraphQLString,
   GraphQLBoolean,
   GraphQLID,
+} from '../../type/scalars';
+import {
+  GraphQLEnumType,
+  GraphQLInputObjectType,
+  GraphQLList,
   GraphQLNonNull,
-} from '../../type';
-import { parseValue } from '../../language';
+} from '../../type/definition';
+
+import { valueFromAST } from '../valueFromAST';
 
 describe('valueFromAST', () => {
   function testCase(type, valueText, expected) {
@@ -66,6 +65,7 @@ describe('valueFromAST', () => {
       BLUE: { value: 3 },
       NULL: { value: null },
       UNDEFINED: { value: undefined },
+      NAN: { value: NaN },
     },
   });
 
@@ -77,18 +77,19 @@ describe('valueFromAST', () => {
     testCase(testEnum, 'null', null);
     testCase(testEnum, 'NULL', null);
     testCase(testEnum, 'UNDEFINED', undefined);
+    testCase(testEnum, 'NAN', NaN);
   });
 
   // Boolean!
-  const nonNullBool = new GraphQLNonNull(GraphQLBoolean);
+  const nonNullBool = GraphQLNonNull(GraphQLBoolean);
   // [Boolean]
-  const listOfBool = new GraphQLList(GraphQLBoolean);
+  const listOfBool = GraphQLList(GraphQLBoolean);
   // [Boolean!]
-  const listOfNonNullBool = new GraphQLList(nonNullBool);
+  const listOfNonNullBool = GraphQLList(nonNullBool);
   // [Boolean]!
-  const nonNullListOfBool = new GraphQLNonNull(listOfBool);
+  const nonNullListOfBool = GraphQLNonNull(listOfBool);
   // [Boolean!]!
-  const nonNullListOfNonNullBool = new GraphQLNonNull(listOfNonNullBool);
+  const nonNullListOfNonNullBool = GraphQLNonNull(listOfNonNullBool);
 
   it('coerces to null unless non-null', () => {
     testCase(GraphQLBoolean, 'null', null);

@@ -1,38 +1,31 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import type { ValidationContext } from '../index';
-import { GraphQLError } from '../../error';
-import { doTypesOverlap } from '../../utilities/typeComparators';
-import { typeFromAST } from '../../utilities/typeFromAST';
+import inspect from '../../jsutils/inspect';
+
+import { GraphQLError } from '../../error/GraphQLError';
+
+import { type ASTVisitor } from '../../language/visitor';
+
 import { isCompositeType } from '../../type/definition';
-import type { GraphQLType } from '../../type/definition';
+
+import { typeFromAST } from '../../utilities/typeFromAST';
+import { doTypesOverlap } from '../../utilities/typeComparators';
+
+import { type ValidationContext } from '../ValidationContext';
 
 export function typeIncompatibleSpreadMessage(
   fragName: string,
-  parentType: GraphQLType,
-  fragType: GraphQLType,
+  parentType: string,
+  fragType: string,
 ): string {
-  return (
-    `Fragment "${fragName}" cannot be spread here as objects of ` +
-    `type "${String(parentType)}" can never be of type "${String(fragType)}".`
-  );
+  return `Fragment "${fragName}" cannot be spread here as objects of type "${parentType}" can never be of type "${fragType}".`;
 }
 
 export function typeIncompatibleAnonSpreadMessage(
-  parentType: GraphQLType,
-  fragType: GraphQLType,
+  parentType: string,
+  fragType: string,
 ): string {
-  return (
-    'Fragment cannot be spread here as objects of ' +
-    `type "${String(parentType)}" can never be of type "${String(fragType)}".`
-  );
+  return `Fragment cannot be spread here as objects of type "${parentType}" can never be of type "${fragType}".`;
 }
 
 /**
@@ -42,7 +35,9 @@ export function typeIncompatibleAnonSpreadMessage(
  * be true: if there is a non-empty intersection of the possible parent types,
  * and possible types which pass the type condition.
  */
-export function PossibleFragmentSpreads(context: ValidationContext): any {
+export function PossibleFragmentSpreads(
+  context: ValidationContext,
+): ASTVisitor {
   return {
     InlineFragment(node) {
       const fragType = context.getType();
@@ -54,8 +49,11 @@ export function PossibleFragmentSpreads(context: ValidationContext): any {
       ) {
         context.reportError(
           new GraphQLError(
-            typeIncompatibleAnonSpreadMessage(parentType, fragType),
-            [node],
+            typeIncompatibleAnonSpreadMessage(
+              inspect(parentType),
+              inspect(fragType),
+            ),
+            node,
           ),
         );
       }
@@ -71,8 +69,12 @@ export function PossibleFragmentSpreads(context: ValidationContext): any {
       ) {
         context.reportError(
           new GraphQLError(
-            typeIncompatibleSpreadMessage(fragName, parentType, fragType),
-            [node],
+            typeIncompatibleSpreadMessage(
+              fragName,
+              inspect(parentType),
+              inspect(fragType),
+            ),
+            node,
           ),
         );
       }
@@ -82,5 +84,10 @@ export function PossibleFragmentSpreads(context: ValidationContext): any {
 
 function getFragmentType(context, name) {
   const frag = context.getFragment(name);
-  return frag && typeFromAST(context.getSchema(), frag.typeCondition);
+  if (frag) {
+    const type = typeFromAST(context.getSchema(), frag.typeCondition);
+    if (isCompositeType(type)) {
+      return type;
+    }
+  }
 }

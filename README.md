@@ -2,21 +2,19 @@
 
 The JavaScript reference implementation for GraphQL, a query language for APIs created by Facebook.
 
-[![npm version](https://badge.fury.io/js/graphql.svg)](http://badge.fury.io/js/graphql)
-[![Build Status](https://travis-ci.org/graphql/graphql-js.svg?branch=master)](https://travis-ci.org/graphql/graphql-js?branch=master)
-[![Coverage Status](https://coveralls.io/repos/graphql/graphql-js/badge.svg?branch=master)](https://coveralls.io/r/graphql/graphql-js?branch=master)
+[![Build Status](https://dev.azure.com/apollographql/graphql-js/_apis/build/status/apollographql.graphql-js?branchName=master)](https://dev.azure.com/apollographql/graphql-js/_build/latest?definitionId=2&branchName=master)
+[![npm version](https://badge.fury.io/js/%40apollo%2Fgraphql.svg)](https://badge.fury.io/js/%40apollo%2Fgraphql)
 
-See more complete documentation at http://graphql.org/ and
-http://graphql.org/graphql-js/.
+See more complete documentation at https://graphql.org/ and
+https://graphql.org/graphql-js/.
 
-Looking for help? Find resources [from the community](http://graphql.org/community/).
-
+Looking for help? Find resources [from the community](https://graphql.org/community/).
 
 ## Getting Started
 
 An overview of GraphQL in general is available in the
-[README](https://github.com/facebook/graphql/blob/master/README.md) for the
-[Specification for GraphQL](https://github.com/facebook/graphql). That overview
+[README](https://github.com/graphql/graphql-spec/blob/master/README.md) for the
+[Specification for GraphQL](https://github.com/graphql/graphql-spec). That overview
 describes a simple set of GraphQL examples that exist as [tests](src/__tests__)
 in this repository. A good way to get started with this repository is to walk
 through that README and the corresponding tests in parallel.
@@ -47,7 +45,7 @@ import {
   graphql,
   GraphQLSchema,
   GraphQLObjectType,
-  GraphQLString
+  GraphQLString,
 } from 'graphql';
 
 var schema = new GraphQLSchema({
@@ -58,10 +56,10 @@ var schema = new GraphQLSchema({
         type: GraphQLString,
         resolve() {
           return 'world';
-        }
-      }
-    }
-  })
+        },
+      },
+    },
+  }),
 });
 ```
 
@@ -76,13 +74,11 @@ Then, serve the result of a query against that type schema.
 var query = '{ hello }';
 
 graphql(schema, query).then(result => {
-
   // Prints
   // {
   //   data: { hello: "world" }
   // }
   console.log(result);
-
 });
 ```
 
@@ -94,7 +90,6 @@ it, reporting errors otherwise.
 var query = '{ boyhowdy }';
 
 graphql(schema, query).then(result => {
-
   // Prints
   // {
   //   errors: [
@@ -103,7 +98,6 @@ graphql(schema, query).then(result => {
   //   ]
   // }
   console.log(result);
-
 });
 ```
 
@@ -119,10 +113,32 @@ directly on this branch:
 npm install graphql@git://github.com/graphql/graphql-js.git#npm
 ```
 
+### Using in a Browser
+
+GraphQL.js is a general purpose library and can be used both in a Node server
+and in the browser. As an example, the [GraphiQL](https://github.com/graphql/graphiql/)
+tool is built with GraphQL.js!
+
+Building a project using GraphQL.js with [webpack](https://webpack.js.org) or
+[rollup](https://github.com/rollup/rollup) should just work and only include
+the portions of the library you use. This works because GraphQL.js is distributed
+with both CommonJS (`require()`) and ESModule (`import`) files. Ensure that any
+custom build configurations look for `.mjs` files!
+
 ### Contributing
 
-We actively welcome pull requests, learn how to
-[contribute](https://github.com/graphql/graphql-js/blob/master/CONTRIBUTING.md).
+[Read the Apollo Contributor Guidelines.](https://github.com/apollographql/graphql-js/blob/master/.github/CONTRIBUTING.md)
+
+#### TypeScript
+
+Part of this fork's purpose is to begin a gradual migration of `graphql-js` from Flow to TypeScript. Some parts have already been converted, and some remain to be converted. The steps for converting a file from Flow to TypeScript are as follows:
+
+1. Rename the file, and convert syntax to TypeScript: `Foo.js` becomes `Foo.ts`, and any Flow specific syntax should be transalted.
+2. Create a `Foo.js.flow` type declaration file for the file's exports (`Foo.d.ts`, if present, can be helpful for guiding this process). Make sure you prefix the file with `// @flow`, or else strange things will happen!
+3. Delete the `Foo.d.ts` file, if it exists.
+4. Run `npm run check`, and ensure both `flow` and `tsc` typecheck the project without issue.
+
+Check out [45da517](https://github.com/apollographql/graphql-js/commit/45da517f32e15c0b8c0356fb4c4d95e959e3df91) for an example of this process.
 
 ### Changelog
 
@@ -131,3 +147,32 @@ Changes are tracked as [GitHub releases](https://github.com/graphql/graphql-js/r
 ### License
 
 GraphQL.js is [MIT-licensed](https://github.com/graphql/graphql-js/blob/master/LICENSE).
+
+### Credits
+
+The `.d.ts` files in this project are, in part, from `@types/graphql`, written by:
+
+- TonyYang https://github.com/TonyPythoneer
+- Caleb Meredith https://github.com/calebmer
+- Dominic Watson https://github.com/intellix
+- Firede https://github.com/firede
+- Kepennar https://github.com/kepennar
+- Mikhail Novikov https://github.com/freiksenet
+- Ivan Goncharov https://github.com/IvanGoncharov
+- Hagai Cohen https://github.com/DxCx
+- Ricardo Portugal https://github.com/rportugal
+- Tim Griesser https://github.com/tgriesser
+- Dylan Stewart https://github.com/dyst5422
+- Alessio Dionisi https://github.com/adnsio
+- Divyendu Singh https://github.com/divyenduz
+- Brad Zacher https://github.com/bradzacher
+- Curtis Layne https://github.com/clayne11
+- Jonathan Cardoso https://github.com/JCMais
+- Pavel Lang https://github.com/langpavel
+- Mark Caudill https://github.com/mc0
+- Martijn Walraven https://github.com/martijnwalraven
+- Jed Mao https://github.com/jedmao
+
+And licensed under the [MIT License](https://github.com/DefinitelyTyped/DefinitelyTyped/blob/master/LICENSE).
+
+Thanks to all the above contributors!

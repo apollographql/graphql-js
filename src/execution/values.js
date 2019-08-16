@@ -1,44 +1,37 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import { createIterator, isCollection } from 'iterall';
+import find from '../polyfills/find';
 
-import { GraphQLError } from '../error';
-import find from '../jsutils/find';
-import invariant from '../jsutils/invariant';
-import isNullish from '../jsutils/isNullish';
-import isInvalid from '../jsutils/isInvalid';
 import keyMap from '../jsutils/keyMap';
-import { typeFromAST } from '../utilities/typeFromAST';
-import { valueFromAST } from '../utilities/valueFromAST';
-import { isValidJSValue } from '../utilities/isValidJSValue';
-import { isValidLiteralValue } from '../utilities/isValidLiteralValue';
-import * as Kind from '../language/kinds';
+import inspect from '../jsutils/inspect';
+import { type ObjMap } from '../jsutils/ObjMap';
+import printPathArray from '../jsutils/printPathArray';
+
+import { GraphQLError } from '../error/GraphQLError';
+
+import { Kind } from '../language/kinds';
 import { print } from '../language/printer';
 import {
-  isInputType,
-  GraphQLScalarType,
-  GraphQLEnumType,
-  GraphQLInputObjectType,
-  GraphQLList,
-  GraphQLNonNull,
-} from '../type/definition';
-import type { ObjMap } from '../jsutils/ObjMap';
-import type { GraphQLInputType, GraphQLField } from '../type/definition';
-import type { GraphQLDirective } from '../type/directives';
-import type { GraphQLSchema } from '../type/schema';
-import type {
-  FieldNode,
-  DirectiveNode,
-  VariableNode,
-  VariableDefinitionNode,
+  type FieldNode,
+  type DirectiveNode,
+  type VariableDefinitionNode,
 } from '../language/ast';
+
+import { type GraphQLSchema } from '../type/schema';
+import { type GraphQLDirective } from '../type/directives';
+import {
+  type GraphQLField,
+  isInputType,
+  isNonNullType,
+} from '../type/definition';
+
+import { typeFromAST } from '../utilities/typeFromAST';
+import { valueFromAST } from '../utilities/valueFromAST';
+import { coerceInputValue } from '../utilities/coerceInputValue';
+
+type CoercedVariableValues =
+  | {| errors: $ReadOnlyArray<GraphQLError> |}
+  | {| coerced: { [variable: string]: mixed, ... } |};
 
 /**
  * Prepares an object map of variableValues of the correct type based on the
@@ -51,51 +44,107 @@ import type {
  */
 export function getVariableValues(
   schema: GraphQLSchema,
-  varDefNodes: Array<VariableDefinitionNode>,
-  inputs: ObjMap<mixed>,
-): { [variable: string]: mixed } {
+  varDefNodes: $ReadOnlyArray<VariableDefinitionNode>,
+  inputs: { +[variable: string]: mixed, ... },
+  options?: {| maxErrors?: number |},
+): CoercedVariableValues {
+  const maxErrors = options && options.maxErrors;
+  const errors = [];
+  try {
+    const coerced = coerceVariableValues(schema, varDefNodes, inputs, error => {
+      if (maxErrors != null && errors.length >= maxErrors) {
+        throw new GraphQLError(
+          'Too many errors processing variables, error limit reached. Execution aborted.',
+        );
+      }
+      errors.push(error);
+    });
+
+    if (errors.length === 0) {
+      return { coerced };
+    }
+  } catch (error) {
+    errors.push(error);
+  }
+
+  return { errors };
+}
+
+function coerceVariableValues(
+  schema: GraphQLSchema,
+  varDefNodes: $ReadOnlyArray<VariableDefinitionNode>,
+  inputs: { +[variable: string]: mixed, ... },
+  onError: GraphQLError => void,
+): { [variable: string]: mixed, ... } {
   const coercedValues = {};
-  for (let i = 0; i < varDefNodes.length; i++) {
-    const varDefNode = varDefNodes[i];
+  for (const varDefNode of varDefNodes) {
     const varName = varDefNode.variable.name.value;
     const varType = typeFromAST(schema, varDefNode.type);
     if (!isInputType(varType)) {
-      throw new GraphQLError(
-        `Variable "$${varName}" expected value of type ` +
-          `"${print(varDefNode.type)}" which cannot be used as an input type.`,
-        [varDefNode.type],
+      // Must use input types for variables. This should be caught during
+      // validation, however is checked again here for safety.
+      const varTypeStr = print(varDefNode.type);
+      onError(
+        new GraphQLError(
+          `Variable "$${varName}" expected value of type "${varTypeStr}" which cannot be used as an input type.`,
+          varDefNode.type,
+        ),
       );
+      continue;
+    }
+
+    if (!hasOwnProperty(inputs, varName)) {
+      if (varDefNode.defaultValue) {
+        coercedValues[varName] = valueFromAST(varDefNode.defaultValue, varType);
+      }
+
+      if (isNonNullType(varType)) {
+        const varTypeStr = inspect(varType);
+        onError(
+          new GraphQLError(
+            `Variable "$${varName}" of required type "${varTypeStr}" was not provided.`,
+            varDefNode,
+          ),
+        );
+      }
+      continue;
     }
 
     const value = inputs[varName];
-    if (isInvalid(value)) {
-      const defaultValue = varDefNode.defaultValue;
-      if (defaultValue) {
-        coercedValues[varName] = valueFromAST(defaultValue, varType);
-      }
-      if (varType instanceof GraphQLNonNull) {
-        throw new GraphQLError(
-          `Variable "$${varName}" of required type ` +
-            `"${String(varType)}" was not provided.`,
-          [varDefNode],
-        );
-      }
-    } else {
-      const errors = isValidJSValue(value, varType);
-      if (errors.length) {
-        const message = errors ? '\n' + errors.join('\n') : '';
-        throw new GraphQLError(
-          `Variable "$${varName}" got invalid value ` +
-            `${JSON.stringify(value)}.${message}`,
-          [varDefNode],
-        );
-      }
-
-      const coercedValue = coerceValue(varType, value);
-      invariant(!isInvalid(coercedValue), 'Should have reported error.');
-      coercedValues[varName] = coercedValue;
+    if (value === null && isNonNullType(varType)) {
+      const varTypeStr = inspect(varType);
+      onError(
+        new GraphQLError(
+          `Variable "$${varName}" of non-null type "${varTypeStr}" must not be null.`,
+          varDefNode,
+        ),
+      );
+      continue;
     }
+
+    coercedValues[varName] = coerceInputValue(
+      value,
+      varType,
+      (path, invalidValue, error) => {
+        let prefix =
+          `Variable "$${varName}" got invalid value ` + inspect(invalidValue);
+        if (path.length > 0) {
+          prefix += ` at "${varName}${printPathArray(path)}"`;
+        }
+        onError(
+          new GraphQLError(
+            prefix + '; ' + error.message,
+            varDefNode,
+            undefined,
+            undefined,
+            undefined,
+            error.originalError,
+          ),
+        );
+      },
+    );
   }
+
   return coercedValues;
 }
 
@@ -108,67 +157,73 @@ export function getVariableValues(
  * Object prototype.
  */
 export function getArgumentValues(
-  def: GraphQLField<*, *> | GraphQLDirective,
+  def: GraphQLField<mixed, mixed> | GraphQLDirective,
   node: FieldNode | DirectiveNode,
   variableValues?: ?ObjMap<mixed>,
-): { [argument: string]: mixed } {
+): { [argument: string]: mixed, ... } {
   const coercedValues = {};
-  const argDefs = def.args;
-  const argNodes = node.arguments;
-  if (!argDefs || !argNodes) {
-    return coercedValues;
-  }
-  const argNodeMap = keyMap(argNodes, arg => arg.name.value);
-  for (let i = 0; i < argDefs.length; i++) {
-    const argDef = argDefs[i];
+  const argNodeMap = keyMap(node.arguments || [], arg => arg.name.value);
+
+  for (const argDef of def.args) {
     const name = argDef.name;
     const argType = argDef.type;
     const argumentNode = argNodeMap[name];
-    const defaultValue = argDef.defaultValue;
+
     if (!argumentNode) {
-      if (!isInvalid(defaultValue)) {
-        coercedValues[name] = defaultValue;
-      } else if (argType instanceof GraphQLNonNull) {
+      if (argDef.defaultValue !== undefined) {
+        coercedValues[name] = argDef.defaultValue;
+      } else if (isNonNullType(argType)) {
         throw new GraphQLError(
-          `Argument "${name}" of required type ` +
-            `"${String(argType)}" was not provided.`,
-          [node],
+          `Argument "${name}" of required type "${inspect(argType)}" ` +
+            'was not provided.',
+          node,
         );
       }
-    } else if (argumentNode.value.kind === Kind.VARIABLE) {
-      const variableName = (argumentNode.value: VariableNode).name.value;
-      if (
-        variableValues &&
-        Object.prototype.hasOwnProperty.call(variableValues, variableName) &&
-        !isInvalid(variableValues[variableName])
-      ) {
-        // Note: this does not check that this variable value is correct.
-        // This assumes that this query has been validated and the variable
-        // usage here is of the correct type.
-        coercedValues[name] = variableValues[variableName];
-      } else if (!isInvalid(defaultValue)) {
-        coercedValues[name] = defaultValue;
-      } else if (argType instanceof GraphQLNonNull) {
-        throw new GraphQLError(
-          `Argument "${name}" of required type "${String(argType)}" was ` +
-            `provided the variable "$${variableName}" which was not provided ` +
-            'a runtime value.',
-          [argumentNode.value],
-        );
-      }
-    } else {
-      const valueNode = argumentNode.value;
-      const coercedValue = valueFromAST(valueNode, argType, variableValues);
-      if (isInvalid(coercedValue)) {
-        const errors = isValidLiteralValue(argType, valueNode);
-        const message = errors ? '\n' + errors.join('\n') : '';
-        throw new GraphQLError(
-          `Argument "${name}" got invalid value ${print(valueNode)}.${message}`,
-          [argumentNode.value],
-        );
-      }
-      coercedValues[name] = coercedValue;
+      continue;
     }
+
+    const valueNode = argumentNode.value;
+    let isNull = valueNode.kind === Kind.NULL;
+
+    if (valueNode.kind === Kind.VARIABLE) {
+      const variableName = valueNode.name.value;
+      if (
+        variableValues == null ||
+        !hasOwnProperty(variableValues, variableName)
+      ) {
+        if (argDef.defaultValue !== undefined) {
+          coercedValues[name] = argDef.defaultValue;
+        } else if (isNonNullType(argType)) {
+          throw new GraphQLError(
+            `Argument "${name}" of required type "${inspect(argType)}" ` +
+              `was provided the variable "$${variableName}" which was not provided a runtime value.`,
+            valueNode,
+          );
+        }
+        continue;
+      }
+      isNull = variableValues[variableName] == null;
+    }
+
+    if (isNull && isNonNullType(argType)) {
+      throw new GraphQLError(
+        `Argument "${name}" of non-null type "${inspect(argType)}" ` +
+          'must not be null.',
+        valueNode,
+      );
+    }
+
+    const coercedValue = valueFromAST(valueNode, argType, variableValues);
+    if (coercedValue === undefined) {
+      // Note: ValuesOfCorrectType validation should catch this before
+      // execution. This is a runtime check to ensure execution does not
+      // continue with an invalid argument value.
+      throw new GraphQLError(
+        `Argument "${name}" has invalid value ${print(valueNode)}.`,
+        valueNode,
+      );
+    }
+    coercedValues[name] = coercedValue;
   }
   return coercedValues;
 }
@@ -186,9 +241,9 @@ export function getArgumentValues(
  */
 export function getDirectiveValues(
   directiveDef: GraphQLDirective,
-  node: { +directives?: $ReadOnlyArray<DirectiveNode> },
+  node: { +directives?: $ReadOnlyArray<DirectiveNode>, ... },
   variableValues?: ?ObjMap<mixed>,
-): void | { [argument: string]: mixed } {
+): void | { [argument: string]: mixed, ... } {
   const directiveNode =
     node.directives &&
     find(
@@ -201,92 +256,6 @@ export function getDirectiveValues(
   }
 }
 
-/**
- * Given a type and any value, return a runtime value coerced to match the type.
- */
-export function coerceValue(type: GraphQLInputType, value: mixed): mixed {
-  // Ensure flow knows that we treat function params as const.
-  const _value = value;
-
-  if (isInvalid(_value)) {
-    return; // Intentionally return no value.
-  }
-
-  if (type instanceof GraphQLNonNull) {
-    if (_value === null) {
-      return; // Intentionally return no value.
-    }
-    return coerceValue(type.ofType, _value);
-  }
-
-  if (_value === null) {
-    // Intentionally return the value null.
-    return null;
-  }
-
-  if (type instanceof GraphQLList) {
-    const itemType = type.ofType;
-    if (isCollection(_value)) {
-      const coercedValues = [];
-      const valueIter = createIterator(_value);
-      if (!valueIter) {
-        return; // Intentionally return no value.
-      }
-      let step;
-      while (!(step = valueIter.next()).done) {
-        const itemValue = coerceValue(itemType, step.value);
-        if (isInvalid(itemValue)) {
-          return; // Intentionally return no value.
-        }
-        coercedValues.push(itemValue);
-      }
-      return coercedValues;
-    }
-    const coercedValue = coerceValue(itemType, _value);
-    if (isInvalid(coercedValue)) {
-      return; // Intentionally return no value.
-    }
-    return [coerceValue(itemType, _value)];
-  }
-
-  if (type instanceof GraphQLInputObjectType) {
-    if (typeof _value !== 'object') {
-      return; // Intentionally return no value.
-    }
-    const coercedObj = Object.create(null);
-    const fields = type.getFields();
-    const fieldNames = Object.keys(fields);
-    for (let i = 0; i < fieldNames.length; i++) {
-      const fieldName = fieldNames[i];
-      const field = fields[fieldName];
-      if (isInvalid(_value[fieldName])) {
-        if (!isInvalid(field.defaultValue)) {
-          coercedObj[fieldName] = field.defaultValue;
-        } else if (field.type instanceof GraphQLNonNull) {
-          return; // Intentionally return no value.
-        }
-        continue;
-      }
-      const fieldValue = coerceValue(field.type, _value[fieldName]);
-      if (isInvalid(fieldValue)) {
-        return; // Intentionally return no value.
-      }
-      coercedObj[fieldName] = fieldValue;
-    }
-    return coercedObj;
-  }
-
-  invariant(
-    type instanceof GraphQLScalarType || type instanceof GraphQLEnumType,
-    'Must be input type',
-  );
-
-  const parsed = type.parseValue(_value);
-  if (isNullish(parsed)) {
-    // null or invalid values represent a failure to parse correctly,
-    // in which case no value is returned.
-    return;
-  }
-
-  return parsed;
+function hasOwnProperty(obj: mixed, prop: string): boolean {
+  return Object.prototype.hasOwnProperty.call(obj, prop);
 }

@@ -1,49 +1,74 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import type { ValidationContext } from '../index';
-import { GraphQLError } from '../../error';
+import { GraphQLError } from '../../error/GraphQLError';
+
+import { Kind } from '../../language/kinds';
+import { type DirectiveNode } from '../../language/ast';
+import { type ASTVisitor } from '../../language/visitor';
+
+import { specifiedDirectives } from '../../type/directives';
+
+import {
+  type SDLValidationContext,
+  type ValidationContext,
+} from '../ValidationContext';
 
 export function duplicateDirectiveMessage(directiveName: string): string {
-  return (
-    `The directive "${directiveName}" can only be used once at ` +
-    'this location.'
-  );
+  return `The directive "${directiveName}" can only be used once at this location.`;
 }
 
 /**
  * Unique directive names per location
  *
- * A GraphQL document is only valid if all directives at a given location
- * are uniquely named.
+ * A GraphQL document is only valid if all non-repeatable directives at
+ * a given location are uniquely named.
  */
-export function UniqueDirectivesPerLocation(context: ValidationContext): any {
+export function UniqueDirectivesPerLocation(
+  context: ValidationContext | SDLValidationContext,
+): ASTVisitor {
+  const uniqueDirectiveMap = Object.create(null);
+
+  const schema = context.getSchema();
+  const definedDirectives = schema
+    ? schema.getDirectives()
+    : specifiedDirectives;
+  for (const directive of definedDirectives) {
+    uniqueDirectiveMap[directive.name] = !directive.isRepeatable;
+  }
+
+  const astDefinitions = context.getDocument().definitions;
+  for (const def of astDefinitions) {
+    if (def.kind === Kind.DIRECTIVE_DEFINITION) {
+      uniqueDirectiveMap[def.name.value] = !def.repeatable;
+    }
+  }
+
   return {
     // Many different AST nodes may contain directives. Rather than listing
     // them all, just listen for entering any node, and check to see if it
     // defines any directives.
     enter(node) {
-      if (node.directives) {
+      // Flow can't refine that node.directives will only contain directives,
+      // so we cast so the rest of the code is well typed.
+      const directives: ?$ReadOnlyArray<DirectiveNode> = (node: any).directives;
+      if (directives) {
         const knownDirectives = Object.create(null);
-        node.directives.forEach(directive => {
+        for (const directive of directives) {
           const directiveName = directive.name.value;
-          if (knownDirectives[directiveName]) {
-            context.reportError(
-              new GraphQLError(duplicateDirectiveMessage(directiveName), [
-                knownDirectives[directiveName],
-                directive,
-              ]),
-            );
-          } else {
-            knownDirectives[directiveName] = directive;
+
+          if (uniqueDirectiveMap[directiveName]) {
+            if (knownDirectives[directiveName]) {
+              context.reportError(
+                new GraphQLError(duplicateDirectiveMessage(directiveName), [
+                  knownDirectives[directiveName],
+                  directive,
+                ]),
+              );
+            } else {
+              knownDirectives[directiveName] = directive;
+            }
           }
-        });
+        }
       }
     },
   };

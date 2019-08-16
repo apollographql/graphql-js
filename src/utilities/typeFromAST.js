@@ -1,22 +1,21 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
+import inspect from '../jsutils/inspect';
 import invariant from '../jsutils/invariant';
-import * as Kind from '../language/kinds';
-import type {
-  NamedTypeNode,
-  ListTypeNode,
-  NonNullTypeNode,
+
+import { Kind } from '../language/kinds';
+import {
+  type NamedTypeNode,
+  type ListTypeNode,
+  type NonNullTypeNode,
 } from '../language/ast';
-import { GraphQLList, GraphQLNonNull } from '../type/definition';
-import type { GraphQLNamedType } from '../type/definition';
-import type { GraphQLSchema } from '../type/schema';
+
+import { type GraphQLSchema } from '../type/schema';
+import {
+  type GraphQLNamedType,
+  GraphQLList,
+  GraphQLNonNull,
+} from '../type/definition';
 
 /**
  * Given a Schema and an AST node describing a type, return a GraphQLType
@@ -26,33 +25,33 @@ import type { GraphQLSchema } from '../type/schema';
  * found in the schema, then undefined will be returned.
  */
 /* eslint-disable no-redeclare */
-declare function typeFromASTType(
+declare function typeFromAST(
   schema: GraphQLSchema,
   typeNode: NamedTypeNode,
-): void | GraphQLNamedType;
-declare function typeFromASTType(
+): GraphQLNamedType | void;
+declare function typeFromAST(
   schema: GraphQLSchema,
   typeNode: ListTypeNode,
-): void | GraphQLList<*>;
-declare function typeFromASTType(
+): GraphQLList<any> | void;
+declare function typeFromAST(
   schema: GraphQLSchema,
   typeNode: NonNullTypeNode,
-): void | GraphQLNonNull<*>;
-function typeFromASTImpl(schema, typeNode) {
+): GraphQLNonNull<any> | void;
+export function typeFromAST(schema, typeNode) {
   /* eslint-enable no-redeclare */
   let innerType;
   if (typeNode.kind === Kind.LIST_TYPE) {
     innerType = typeFromAST(schema, typeNode.type);
-    return innerType && new GraphQLList(innerType);
+    return innerType && GraphQLList(innerType);
   }
   if (typeNode.kind === Kind.NON_NULL_TYPE) {
     innerType = typeFromAST(schema, typeNode.type);
-    return innerType && new GraphQLNonNull(innerType);
+    return innerType && GraphQLNonNull(innerType);
   }
-  invariant(typeNode.kind === Kind.NAMED_TYPE, 'Must be a named type.');
-  return schema.getType(typeNode.name.value);
+  if (typeNode.kind === Kind.NAMED_TYPE) {
+    return schema.getType(typeNode.name.value);
+  }
+
+  // Not reachable. All possible type nodes have been considered.
+  invariant(false, 'Unexpected type node: ' + inspect((typeNode: empty)));
 }
-// This will export typeFromAST with the correct type, but currently exposes
-// ~26 errors: https://gist.github.com/4a29403a99a8186fcb15064d69c5f3ae
-// export var typeFromAST: typeof typeFromASTType = typeFromASTImpl;
-export const typeFromAST: $FlowFixMe = typeFromASTImpl;

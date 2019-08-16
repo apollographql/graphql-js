@@ -1,15 +1,15 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// @flow strict
 
-import { describe, it } from 'mocha';
 import { expect } from 'chai';
+import { describe, it } from 'mocha';
+
 import dedent from '../../jsutils/dedent';
+
+import { parse } from '../../language/parser';
+import { print } from '../../language/printer';
+import { Source } from '../../language/source';
+
 import { concatAST } from '../concatAST';
-import { Source, parse, print } from '../../language';
 
 describe('concatAST', () => {
   it('concats two ASTs together', () => {

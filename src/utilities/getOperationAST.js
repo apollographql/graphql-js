@@ -1,14 +1,10 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import { OPERATION_DEFINITION } from '../language/kinds';
-import type { DocumentNode, OperationDefinitionNode } from '../language/ast';
+import { Kind } from '../language/kinds';
+import {
+  type DocumentNode,
+  type OperationDefinitionNode,
+} from '../language/ast';
 
 /**
  * Returns an operation AST given a document AST and optionally an operation
@@ -20,9 +16,8 @@ export function getOperationAST(
   operationName: ?string,
 ): ?OperationDefinitionNode {
   let operation = null;
-  for (let i = 0; i < documentAST.definitions.length; i++) {
-    const definition = documentAST.definitions[i];
-    if (definition.kind === OPERATION_DEFINITION) {
+  for (const definition of documentAST.definitions) {
+    if (definition.kind === Kind.OPERATION_DEFINITION) {
       if (!operationName) {
         // If no operation name was provided, only return an Operation if there
         // is one defined in the document. Upon encountering the second, return

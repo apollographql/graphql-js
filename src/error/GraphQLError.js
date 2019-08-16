@@ -1,20 +1,11 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import { getLocation } from '../language/location';
-import type { ASTNode } from '../language/ast';
-import type { Source } from '../language/source';
+import isObjectLike from '../jsutils/isObjectLike';
 
-export type GraphQLErrorLocation = {|
-  +line: number,
-  +column: number,
-|};
+import { type ASTNode } from '../language/ast';
+import { type Source } from '../language/source';
+import { type SourceLocation, getLocation } from '../language/location';
+import { printLocation, printSourceLocation } from '../language/printLocation';
 
 /**
  * A GraphQLError describes an Error found during the parse, validate, or
@@ -25,12 +16,12 @@ export type GraphQLErrorLocation = {|
 declare class GraphQLError extends Error {
   constructor(
     message: string,
-    nodes?: ?$ReadOnlyArray<ASTNode>,
+    nodes?: $ReadOnlyArray<ASTNode> | ASTNode | void | null,
     source?: ?Source,
     positions?: ?$ReadOnlyArray<number>,
     path?: ?$ReadOnlyArray<string | number>,
     originalError?: ?Error,
-    extensions?: ?{ [key: string]: mixed },
+    extensions?: ?{ [key: string]: mixed, ... },
   ): void;
 
   /**
@@ -52,7 +43,7 @@ declare class GraphQLError extends Error {
    *
    * Enumerable, and appears in the result of JSON.stringify().
    */
-  +locations: $ReadOnlyArray<GraphQLErrorLocation> | void;
+  +locations: $ReadOnlyArray<SourceLocation> | void;
 
   /**
    * An array describing the JSON-path into the execution response which
@@ -68,7 +59,10 @@ declare class GraphQLError extends Error {
   +nodes: $ReadOnlyArray<ASTNode> | void;
 
   /**
-   * The source GraphQL document corresponding to this error.
+   * The source GraphQL document for the first location of this error.
+   *
+   * Note that if this Error represents more than one node, the source may not
+   * represent nodes after the first node.
    */
   +source: Source | void;
 
@@ -84,30 +78,39 @@ declare class GraphQLError extends Error {
   +originalError: ?Error;
 
   /**
-   * The original error thrown from a field resolver during execution.
+   * Extension fields to add to the formatted error.
    */
-  +extensions: ?{ [key: string]: mixed };
+  +extensions: { [key: string]: mixed, ... } | void;
 }
 
 export function GraphQLError( // eslint-disable-line no-redeclare
   message: string,
-  nodes?: ?$ReadOnlyArray<ASTNode>,
+  nodes?: $ReadOnlyArray<ASTNode> | ASTNode | void,
   source?: ?Source,
   positions?: ?$ReadOnlyArray<number>,
   path?: ?$ReadOnlyArray<string | number>,
-  originalError?: ?Error,
-  extensions?: ?{ [key: string]: mixed },
+  originalError?: ?Error & { +extensions: mixed, ... },
+  extensions?: ?{ [key: string]: mixed, ... },
 ) {
+  // Compute list of blame nodes.
+  const _nodes = Array.isArray(nodes)
+    ? nodes.length !== 0
+      ? nodes
+      : undefined
+    : nodes
+    ? [nodes]
+    : undefined;
+
   // Compute locations in the source for the given nodes/positions.
   let _source = source;
-  if (!_source && nodes && nodes.length > 0) {
-    const node = nodes[0];
+  if (!_source && _nodes) {
+    const node = _nodes[0];
     _source = node && node.loc && node.loc.source;
   }
 
   let _positions = positions;
-  if (!_positions && nodes) {
-    _positions = nodes.reduce((list, node) => {
+  if (!_positions && _nodes) {
+    _positions = _nodes.reduce((list, node) => {
       if (node.loc) {
         list.push(node.loc.start);
       }
@@ -119,9 +122,23 @@ export function GraphQLError( // eslint-disable-line no-redeclare
   }
 
   let _locations;
-  const _source2 = _source; // seems here Flow need a const to resolve type.
-  if (_source2 && _positions) {
-    _locations = _positions.map(pos => getLocation(_source2, pos));
+  if (positions && source) {
+    _locations = positions.map(pos => getLocation(source, pos));
+  } else if (_nodes) {
+    _locations = _nodes.reduce((list, node) => {
+      if (node.loc) {
+        list.push(getLocation(node.loc.source, node.loc.start));
+      }
+      return list;
+    }, []);
+  }
+
+  let _extensions = extensions;
+  if (_extensions == null && originalError != null) {
+    const originalExtensions = originalError.extensions;
+    if (isObjectLike(originalExtensions)) {
+      _extensions = originalExtensions;
+    }
   }
 
   Object.defineProperties(this, {
@@ -140,7 +157,7 @@ export function GraphQLError( // eslint-disable-line no-redeclare
       // By being enumerable, JSON.stringify will include `locations` in the
       // resulting output. This ensures that the simplest possible GraphQL
       // service adheres to the spec.
-      enumerable: true,
+      enumerable: Boolean(_locations),
     },
     path: {
       // Coercing falsey values to undefined ensures they will not be included
@@ -149,10 +166,10 @@ export function GraphQLError( // eslint-disable-line no-redeclare
       // By being enumerable, JSON.stringify will include `path` in the
       // resulting output. This ensures that the simplest possible GraphQL
       // service adheres to the spec.
-      enumerable: true,
+      enumerable: Boolean(path),
     },
     nodes: {
-      value: nodes || undefined,
+      value: _nodes || undefined,
     },
     source: {
       value: _source || undefined,
@@ -164,7 +181,13 @@ export function GraphQLError( // eslint-disable-line no-redeclare
       value: originalError,
     },
     extensions: {
-      value: extensions,
+      // Coercing falsey values to undefined ensures they will not be included
+      // in JSON.stringify() when not provided.
+      value: _extensions || undefined,
+      // By being enumerable, JSON.stringify will include `path` in the
+      // resulting output. This ensures that the simplest possible GraphQL
+      // service adheres to the spec.
+      enumerable: Boolean(_extensions),
     },
   });
 
@@ -189,4 +212,31 @@ export function GraphQLError( // eslint-disable-line no-redeclare
 (GraphQLError: any).prototype = Object.create(Error.prototype, {
   constructor: { value: GraphQLError },
   name: { value: 'GraphQLError' },
+  toString: {
+    value: function toString() {
+      return printError(this);
+    },
+  },
 });
+
+/**
+ * Prints a GraphQLError to a string, representing useful location information
+ * about the error's position in the source.
+ */
+export function printError(error: GraphQLError): string {
+  let output = error.message;
+
+  if (error.nodes) {
+    for (const node of error.nodes) {
+      if (node.loc) {
+        output += '\n\n' + printLocation(node.loc);
+      }
+    }
+  } else if (error.source && error.locations) {
+    for (const location of error.locations) {
+      output += '\n\n' + printSourceLocation(error.source, location);
+    }
+  }
+
+  return output;
+}

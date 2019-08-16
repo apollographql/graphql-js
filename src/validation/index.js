@@ -1,25 +1,12 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-export { validate, ValidationContext } from './validate';
+export { validate } from './validate';
 
+export { ValidationContext } from './ValidationContext';
+export type { ValidationRule } from './ValidationContext';
+
+// All validation rules in the GraphQL Specification.
 export { specifiedRules } from './specifiedRules';
-
-// Spec Section: "Argument Values Type Correctness"
-export {
-  ArgumentsOfCorrectType as ArgumentsOfCorrectTypeRule,
-} from './rules/ArgumentsOfCorrectType';
-
-// Spec Section: "Variable Default Values Are Correctly Typed"
-export {
-  DefaultValuesOfCorrectType as DefaultValuesOfCorrectTypeRule,
-} from './rules/DefaultValuesOfCorrectType';
 
 // Spec Section: "Field Selections on Objects, Interfaces, and Unions Types"
 export {
@@ -86,8 +73,8 @@ export {
 
 // Spec Section: "Argument Optionality"
 export {
-  ProvidedNonNullArguments as ProvidedNonNullArgumentsRule,
-} from './rules/ProvidedNonNullArguments';
+  ProvidedRequiredArguments as ProvidedRequiredArgumentsRule,
+} from './rules/ProvidedRequiredArguments';
 
 // Spec Section: "Leaf Field Selections"
 export { ScalarLeafs as ScalarLeafsRule } from './rules/ScalarLeafs';
@@ -126,6 +113,11 @@ export {
 export {
   UniqueVariableNames as UniqueVariableNamesRule,
 } from './rules/UniqueVariableNames';
+
+// Spec Section: "Values Type Correctness"
+export {
+  ValuesOfCorrectType as ValuesOfCorrectTypeRule,
+} from './rules/ValuesOfCorrectType';
 
 // Spec Section: "Variables are Input Types"
 export {

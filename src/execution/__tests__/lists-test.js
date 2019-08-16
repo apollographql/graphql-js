@@ -1,26 +1,19 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
-
-// 80+ char lines are useful in describe/it, so ignore in this file.
-/* eslint-disable max-len */
+// @flow strict
 
 import { expect } from 'chai';
 import { describe, it } from 'mocha';
-import { formatError } from '../../error';
-import { execute } from '../execute';
-import { parse } from '../../language';
+
+import { parse } from '../../language/parser';
+
+import { GraphQLSchema } from '../../type/schema';
+import { GraphQLString, GraphQLInt } from '../../type/scalars';
 import {
-  GraphQLSchema,
-  GraphQLObjectType,
-  GraphQLString,
-  GraphQLInt,
   GraphQLList,
   GraphQLNonNull,
-} from '../../type';
+  GraphQLObjectType,
+} from '../../type/definition';
+
+import { execute } from '../execute';
 
 // resolved() is shorthand for Promise.resolve()
 const resolved = Promise.resolve.bind(Promise);
@@ -51,18 +44,7 @@ function check(testType, testData, expected) {
     const ast = parse('{ nest { test } }');
 
     const response = await execute(schema, ast, data);
-
-    // Formatting errors for ease of test writing.
-    let result;
-    if (response.errors) {
-      result = {
-        data: response.data,
-        errors: response.errors.map(formatError),
-      };
-    } else {
-      result = response;
-    }
-    expect(result).to.deep.equal(expected);
+    expect(response).to.deep.equal(expected);
   };
 }
 
@@ -70,7 +52,7 @@ describe('Execute: Accepts any iterable as list value', () => {
   it(
     'Accepts a Set as a List value',
     check(
-      new GraphQLList(GraphQLString),
+      GraphQLList(GraphQLString),
       new Set(['apple', 'banana', 'apple', 'coconut']),
       { data: { nest: { test: ['apple', 'banana', 'coconut'] } } },
     ),
@@ -84,25 +66,25 @@ describe('Execute: Accepts any iterable as list value', () => {
 
   it(
     'Accepts an Generator function as a List value',
-    check(new GraphQLList(GraphQLString), yieldItems(), {
+    check(GraphQLList(GraphQLString), yieldItems(), {
       data: { nest: { test: ['one', '2', 'true'] } },
     }),
   );
 
-  function getArgs() {
+  function getArgs(..._args) {
     return arguments;
   }
 
   it(
     'Accepts function arguments as a List value',
-    check(new GraphQLList(GraphQLString), getArgs('one', 'two'), {
+    check(GraphQLList(GraphQLString), getArgs('one', 'two'), {
       data: { nest: { test: ['one', 'two'] } },
     }),
   );
 
   it(
     'Does not accept (Iterable) String-literal as a List value',
-    check(new GraphQLList(GraphQLString), 'Singluar', {
+    check(GraphQLList(GraphQLString), 'Singular', {
       data: { nest: { test: null } },
       errors: [
         {
@@ -118,7 +100,7 @@ describe('Execute: Accepts any iterable as list value', () => {
 
 describe('Execute: Handles list nullability', () => {
   describe('[T]', () => {
-    const type = new GraphQLList(GraphQLInt);
+    const type = GraphQLList(GraphQLInt);
 
     describe('Array<T>', () => {
       it(
@@ -203,7 +185,7 @@ describe('Execute: Handles list nullability', () => {
   });
 
   describe('[T]!', () => {
-    const type = new GraphQLNonNull(new GraphQLList(GraphQLInt));
+    const type = GraphQLNonNull(GraphQLList(GraphQLInt));
 
     describe('Array<T>', () => {
       it(
@@ -311,7 +293,7 @@ describe('Execute: Handles list nullability', () => {
   });
 
   describe('[T!]', () => {
-    const type = new GraphQLList(new GraphQLNonNull(GraphQLInt));
+    const type = GraphQLList(GraphQLNonNull(GraphQLInt));
 
     describe('Array<T>', () => {
       it(
@@ -422,9 +404,7 @@ describe('Execute: Handles list nullability', () => {
   });
 
   describe('[T!]!', () => {
-    const type = new GraphQLNonNull(
-      new GraphQLList(new GraphQLNonNull(GraphQLInt)),
-    );
+    const type = GraphQLNonNull(GraphQLList(GraphQLNonNull(GraphQLInt)));
 
     describe('Array<T>', () => {
       it(

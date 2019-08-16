@@ -1,21 +1,19 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// @flow strict
 
 import { visit } from './visitor';
+import { type ASTNode } from './ast';
+import { printBlockString } from './blockString';
 
 /**
  * Converts an AST into a string, using one set of reasonable
  * formatting rules.
  */
-export function print(ast) {
+export function print(ast: ASTNode): string {
   return visit(ast, { leave: printDocASTReducer });
 }
 
-const printDocASTReducer = {
+// TODO: provide better type coverage in future
+const printDocASTReducer: any = {
   Name: node => node.value,
   Variable: node => '$' + node.name,
 
@@ -36,9 +34,12 @@ const printDocASTReducer = {
       : join([op, join([name, varDefs]), directives, selectionSet], ' ');
   },
 
-  VariableDefinition: ({ variable, type, defaultValue }) =>
-    variable + ': ' + type + wrap(' = ', defaultValue),
-
+  VariableDefinition: ({ variable, type, defaultValue, directives }) =>
+    variable +
+    ': ' +
+    type +
+    wrap(' = ', defaultValue) +
+    wrap(' ', join(directives, ' ')),
   SelectionSet: ({ selections }) => block(selections),
 
   Field: ({ alias, name, arguments: args, directives, selectionSet }) =>
@@ -64,9 +65,17 @@ const printDocASTReducer = {
       ' ',
     ),
 
-  FragmentDefinition: ({ name, typeCondition, directives, selectionSet }) =>
-    `fragment ${name} on ${typeCondition} ` +
-    wrap('', join(directives, ' '), ' ') +
+  FragmentDefinition: ({
+    name,
+    typeCondition,
+    variableDefinitions,
+    directives,
+    selectionSet,
+  }) =>
+    // Note: fragment variable definitions are experimental and may be changed
+    // or removed in the future.
+    `fragment ${name}${wrap('(', join(variableDefinitions, ', '), ')')} ` +
+    `on ${typeCondition} ${wrap('', join(directives, ' '), ' ')}` +
     selectionSet,
 
   // Value
@@ -75,9 +84,9 @@ const printDocASTReducer = {
   FloatValue: ({ value }) => value,
   StringValue: ({ value, block: isBlockString }, key) =>
     isBlockString
-      ? printBlockString(value, key === 'description')
+      ? printBlockString(value, key === 'description' ? '' : '  ')
       : JSON.stringify(value),
-  BooleanValue: ({ value }) => JSON.stringify(value),
+  BooleanValue: ({ value }) => (value ? 'true' : 'false'),
   NullValue: () => 'null',
   EnumValue: ({ value }) => value,
   ListValue: ({ values }) => '[' + join(values, ', ') + ']',
@@ -102,113 +111,85 @@ const printDocASTReducer = {
 
   OperationTypeDefinition: ({ operation, type }) => operation + ': ' + type,
 
-  ScalarTypeDefinition: ({ description, name, directives }) =>
-    join(
-      [description, join(['scalar', name, join(directives, ' ')], ' ')],
-      '\n',
-    ),
+  ScalarTypeDefinition: addDescription(({ name, directives }) =>
+    join(['scalar', name, join(directives, ' ')], ' '),
+  ),
 
-  ObjectTypeDefinition: ({
-    description,
-    name,
-    interfaces,
-    directives,
-    fields,
-  }) =>
-    join(
-      [
-        description,
-        join(
-          [
-            'type',
-            name,
-            wrap('implements ', join(interfaces, ', ')),
-            join(directives, ' '),
-            block(fields),
-          ],
-          ' ',
-        ),
-      ],
-      '\n',
-    ),
+  ObjectTypeDefinition: addDescription(
+    ({ name, interfaces, directives, fields }) =>
+      join(
+        [
+          'type',
+          name,
+          wrap('implements ', join(interfaces, ' & ')),
+          join(directives, ' '),
+          block(fields),
+        ],
+        ' ',
+      ),
+  ),
 
-  FieldDefinition: ({ description, name, arguments: args, type, directives }) =>
-    join(
-      [
-        description,
-        name +
-          wrap('(', join(args, ', '), ')') +
-          ': ' +
-          type +
-          wrap(' ', join(directives, ' ')),
-      ],
-      '\n',
-    ),
+  FieldDefinition: addDescription(
+    ({ name, arguments: args, type, directives }) =>
+      name +
+      (hasMultilineItems(args)
+        ? wrap('(\n', indent(join(args, '\n')), '\n)')
+        : wrap('(', join(args, ', '), ')')) +
+      ': ' +
+      type +
+      wrap(' ', join(directives, ' ')),
+  ),
 
-  InputValueDefinition: ({
-    description,
-    name,
-    type,
-    defaultValue,
-    directives,
-  }) =>
+  InputValueDefinition: addDescription(
+    ({ name, type, defaultValue, directives }) =>
+      join(
+        [name + ': ' + type, wrap('= ', defaultValue), join(directives, ' ')],
+        ' ',
+      ),
+  ),
+
+  InterfaceTypeDefinition: addDescription(({ name, directives, fields }) =>
+    join(['interface', name, join(directives, ' '), block(fields)], ' '),
+  ),
+
+  UnionTypeDefinition: addDescription(({ name, directives, types }) =>
     join(
       [
-        description,
-        join(
-          [name + ': ' + type, wrap('= ', defaultValue), join(directives, ' ')],
-          ' ',
-        ),
+        'union',
+        name,
+        join(directives, ' '),
+        types && types.length !== 0 ? '= ' + join(types, ' | ') : '',
       ],
-      '\n',
+      ' ',
     ),
+  ),
 
-  InterfaceTypeDefinition: ({ description, name, directives, fields }) =>
-    join(
-      [
-        description,
-        join(['interface', name, join(directives, ' '), block(fields)], ' '),
-      ],
-      '\n',
-    ),
+  EnumTypeDefinition: addDescription(({ name, directives, values }) =>
+    join(['enum', name, join(directives, ' '), block(values)], ' '),
+  ),
 
-  UnionTypeDefinition: ({ description, name, directives, types }) =>
-    join(
-      [
-        description,
-        join(
-          [
-            'union',
-            name,
-            join(directives, ' '),
-            types && types.length !== 0 ? '= ' + join(types, ' | ') : '',
-          ],
-          ' ',
-        ),
-      ],
-      '\n',
-    ),
+  EnumValueDefinition: addDescription(({ name, directives }) =>
+    join([name, join(directives, ' ')], ' '),
+  ),
 
-  EnumTypeDefinition: ({ description, name, directives, values }) =>
-    join(
-      [
-        description,
-        join(['enum', name, join(directives, ' '), block(values)], ' '),
-      ],
-      '\n',
-    ),
+  InputObjectTypeDefinition: addDescription(({ name, directives, fields }) =>
+    join(['input', name, join(directives, ' '), block(fields)], ' '),
+  ),
 
-  EnumValueDefinition: ({ description, name, directives }) =>
-    join([description, join([name, join(directives, ' ')], ' ')], '\n'),
+  DirectiveDefinition: addDescription(
+    ({ name, arguments: args, repeatable, locations }) =>
+      'directive @' +
+      name +
+      (hasMultilineItems(args)
+        ? wrap('(\n', indent(join(args, '\n')), '\n)')
+        : wrap('(', join(args, ', '), ')')) +
+      (repeatable ? ' repeatable' : '') +
+      ' on ' +
+      join(locations, ' | '),
+  ),
 
-  InputObjectTypeDefinition: ({ description, name, directives, fields }) =>
-    join(
-      [
-        description,
-        join(['input', name, join(directives, ' '), block(fields)], ' '),
-      ],
-      '\n',
-    ),
+  SchemaExtension: ({ directives, operationTypes }) =>
+    join(['extend schema', join(directives, ' '), block(operationTypes)], ' '),
 
   ScalarTypeExtension: ({ name, directives }) =>
     join(['extend scalar', name, join(directives, ' ')], ' '),
@@ -218,7 +199,7 @@ const printDocASTReducer = {
       [
         'extend type',
         name,
-        wrap('implements ', join(interfaces, ', ')),
+        wrap('implements ', join(interfaces, ' & ')),
         join(directives, ' '),
         block(fields),
       ],
@@ -244,20 +225,11 @@ const printDocASTReducer = {
 
   InputObjectTypeExtension: ({ name, directives, fields }) =>
     join(['extend input', name, join(directives, ' '), block(fields)], ' '),
-
-  DirectiveDefinition: ({ description, name, arguments: args, locations }) =>
-    join(
-      [
-        description,
-        'directive @' +
-          name +
-          wrap('(', join(args, ', '), ')') +
-          ' on ' +
-          join(locations, ' | '),
-      ],
-      '\n',
-    ),
 };
+
+function addDescription(cb) {
+  return node => join([node.description, cb(node)], '\n');
+}
 
 /**
  * Given maybeArray, print an empty string if it is null or empty, otherwise
@@ -273,7 +245,7 @@ function join(maybeArray, separator) {
  */
 function block(array) {
   return array && array.length !== 0
-    ? indent('{\n' + join(array, '\n')) + '\n}'
+    ? '{\n' + indent(join(array, '\n')) + '\n}'
     : '';
 }
 
@@ -286,18 +258,13 @@ function wrap(start, maybeString, end) {
 }
 
 function indent(maybeString) {
-  return maybeString && maybeString.replace(/\n/g, '\n  ');
+  return maybeString && '  ' + maybeString.replace(/\n/g, '\n  ');
 }
 
-/**
- * Print a block string in the indented block form by adding a leading and
- * trailing blank line. However, if a block string starts with whitespace and is
- * a single-line, adding a leading blank line would strip that whitespace.
- */
-function printBlockString(value, isDescription) {
-  return (value[0] === ' ' || value[0] === '\t') && value.indexOf('\n') === -1
-    ? `"""${value.replace(/"""/g, '\\"""')}"""`
-    : isDescription
-      ? '"""\n' + value.replace(/"""/g, '\\"""') + '\n"""'
-      : indent('"""\n' + value.replace(/"""/g, '\\"""')) + '\n"""';
+function isMultiline(string) {
+  return string.indexOf('\n') !== -1;
+}
+
+function hasMultilineItems(maybeArray) {
+  return maybeArray && maybeArray.some(isMultiline);
 }

@@ -1,46 +1,42 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
-
-// 80+ char lines are useful in tests, so ignore in this file.
-/* eslint-disable max-len */
+// @flow strict
 
 import { describe, it } from 'mocha';
-import { expectPassesRule, expectFailsRule } from './harness';
+
 import {
   ExecutableDefinitions,
   nonExecutableDefinitionMessage,
 } from '../rules/ExecutableDefinitions';
 
+import { expectValidationErrors } from './harness';
+
+function expectErrors(queryStr) {
+  return expectValidationErrors(ExecutableDefinitions, queryStr);
+}
+
+function expectValid(queryStr) {
+  expectErrors(queryStr).to.deep.equal([]);
+}
+
 function nonExecutableDefinition(defName, line, column) {
   return {
     message: nonExecutableDefinitionMessage(defName),
     locations: [{ line, column }],
-    path: undefined,
   };
 }
 
 describe('Validate: Executable definitions', () => {
   it('with only operation', () => {
-    expectPassesRule(
-      ExecutableDefinitions,
-      `
+    expectValid(`
       query Foo {
         dog {
           name
         }
       }
-    `,
-    );
+    `);
   });
 
   it('with operation and fragment', () => {
-    expectPassesRule(
-      ExecutableDefinitions,
-      `
+    expectValid(`
       query Foo {
         dog {
           name
@@ -51,14 +47,11 @@ describe('Validate: Executable definitions', () => {
       fragment Frag on Dog {
         name
       }
-    `,
-    );
+    `);
   });
 
   it('with type definition', () => {
-    expectFailsRule(
-      ExecutableDefinitions,
-      `
+    expectErrors(`
       query Foo {
         dog {
           name
@@ -72,11 +65,27 @@ describe('Validate: Executable definitions', () => {
       extend type Dog {
         color: String
       }
-    `,
-      [
-        nonExecutableDefinition('Cow', 8, 12),
-        nonExecutableDefinition('Dog', 12, 19),
-      ],
-    );
+    `).to.deep.equal([
+      nonExecutableDefinition('Cow', 8, 7),
+      nonExecutableDefinition('Dog', 12, 7),
+    ]);
+  });
+
+  it('with schema definition', () => {
+    expectErrors(`
+      schema {
+        query: Query
+      }
+
+      type Query {
+        test: String
+      }
+
+      extend schema @directive
+    `).to.deep.equal([
+      nonExecutableDefinition('schema', 2, 7),
+      nonExecutableDefinition('Query', 6, 7),
+      nonExecutableDefinition('schema', 10, 7),
+    ]);
   });
 });

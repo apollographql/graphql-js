@@ -1,21 +1,18 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// @flow strict
 
 import { expect } from 'chai';
 import { describe, it } from 'mocha';
-import { parse } from '../parser';
-import { readFileSync } from 'fs';
-import { print } from '../printer';
-import { join } from 'path';
+
 import dedent from '../../jsutils/dedent';
 
-describe('Printer', () => {
+import { parse } from '../parser';
+import { print } from '../printer';
+
+import { kitchenSinkQuery } from '../../__fixtures__';
+
+describe('Printer: Query document', () => {
   it('does not alter ast', () => {
-    const ast = parse(kitchenSink);
+    const ast = parse(kitchenSinkQuery);
     const astBefore = JSON.stringify(ast);
     print(ast);
     expect(JSON.stringify(ast)).to.equal(astBefore);
@@ -27,43 +24,44 @@ describe('Printer', () => {
   });
 
   it('produces helpful error messages', () => {
-    const badAst1 = { random: 'Data' };
-    expect(() => print(badAst1)).to.throw(
-      'Invalid AST Node: {"random":"Data"}',
+    const badAST = { random: 'Data' };
+    // $DisableFlowOnNegativeTest
+    expect(() => print(badAST)).to.throw(
+      'Invalid AST Node: { random: "Data" }',
     );
   });
 
   it('correctly prints non-query operations without name', () => {
-    const queryAstShorthanded = parse('query { id, name }');
-    expect(print(queryAstShorthanded)).to.equal(dedent`
+    const queryASTShorthanded = parse('query { id, name }');
+    expect(print(queryASTShorthanded)).to.equal(dedent`
       {
         id
         name
       }
     `);
 
-    const mutationAst = parse('mutation { id, name }');
-    expect(print(mutationAst)).to.equal(dedent`
+    const mutationAST = parse('mutation { id, name }');
+    expect(print(mutationAST)).to.equal(dedent`
       mutation {
         id
         name
       }
     `);
 
-    const queryAstWithArtifacts = parse(
+    const queryASTWithArtifacts = parse(
       'query ($foo: TestType) @testDirective { id, name }',
     );
-    expect(print(queryAstWithArtifacts)).to.equal(dedent`
+    expect(print(queryASTWithArtifacts)).to.equal(dedent`
       query ($foo: TestType) @testDirective {
         id
         name
       }
     `);
 
-    const mutationAstWithArtifacts = parse(
+    const mutationASTWithArtifacts = parse(
       'mutation ($foo: TestType) @testDirective { id, name }',
     );
-    expect(print(mutationAstWithArtifacts)).to.equal(dedent`
+    expect(print(mutationASTWithArtifacts)).to.equal(dedent`
       mutation ($foo: TestType) @testDirective {
         id
         name
@@ -71,57 +69,62 @@ describe('Printer', () => {
     `);
   });
 
-  it('correctly prints single-line block strings with leading space', () => {
-    const mutationAstWithArtifacts = parse(
-      '{ field(arg: """    space-led value""") }',
+  it('prints query with variable directives', () => {
+    const queryASTWithVariableDirective = parse(
+      'query ($foo: TestType = {a: 123} @testDirective(if: true) @test) { id }',
     );
-    expect(print(mutationAstWithArtifacts)).to.equal(dedent`
-      {
-        field(arg: """    space-led value""")
+    expect(print(queryASTWithVariableDirective)).to.equal(dedent`
+      query ($foo: TestType = {a: 123} @testDirective(if: true) @test) {
+        id
       }
     `);
   });
 
-  it('correctly prints block strings with a first line indentation', () => {
-    const mutationAstWithArtifacts = parse(`
+  it('Experimental: prints fragment with variable directives', () => {
+    const queryASTWithVariableDirective = parse(
+      'fragment Foo($foo: TestType @test) on TestType @testDirective { id }',
       {
-        field(arg: """
-              first
-            line
-          indentation
-        """)
-      }
-    `);
-    expect(print(mutationAstWithArtifacts)).to.equal(dedent`
-      {
-        field(arg: """
-              first
-            line
-          indentation
-        """)
+        experimentalFragmentVariables: true,
+      },
+    );
+    expect(print(queryASTWithVariableDirective)).to.equal(dedent`
+      fragment Foo($foo: TestType @test) on TestType @testDirective {
+        id
       }
     `);
   });
 
-  const kitchenSink = readFileSync(join(__dirname, '/kitchen-sink.graphql'), {
-    encoding: 'utf8',
+  it('Experimental: correctly prints fragment defined variables', () => {
+    const fragmentWithVariable = parse(
+      `
+        fragment Foo($a: ComplexType, $b: Boolean = false) on TestType {
+          id
+        }
+      `,
+      { experimentalFragmentVariables: true },
+    );
+    expect(print(fragmentWithVariable)).to.equal(dedent`
+      fragment Foo($a: ComplexType, $b: Boolean = false) on TestType {
+        id
+      }
+    `);
   });
 
   it('prints kitchen sink', () => {
-    const ast = parse(kitchenSink);
+    const printed = print(parse(kitchenSinkQuery));
 
-    const printed = print(ast);
-
-    expect(printed).to.equal(dedent`
-      query queryName($foo: ComplexType, $site: Site = MOBILE) {
+    expect(printed).to.equal(
+      // $FlowFixMe
+      dedent(String.raw`
+      query queryName($foo: ComplexType, $site: Site = MOBILE) @onQuery {
         whoever123is: node(id: [123, 456]) {
           id
-          ... on User @defer {
+          ... on User @onInlineFragment {
             field2 {
               id
               alias: field1(first: 10, after: $foo) @include(if: $foo) {
                 id
-                ...frag
+                ...frag @onFragmentSpread
               }
             }
           }
@@ -134,15 +137,15 @@ describe('Printer', () => {
         }
       }
 
-      mutation likeStory {
-        like(story: 123) @defer {
+      mutation likeStory @onMutation {
+        like(story: 123) @onField {
           story {
-            id
+            id @onField
           }
         }
       }
 
-      subscription StoryLikeSubscription($input: StoryLikeSubscribeInput) {
+      subscription StoryLikeSubscription($input: StoryLikeSubscribeInput) @onSubscription {
         storyLikeSubscribe(input: $input) {
           story {
             likers {
@@ -155,7 +158,7 @@ describe('Printer', () => {
         }
       }
 
-      fragment frag on Friend {
+      fragment frag on Friend @onFragmentDefinition {
         foo(size: $size, bar: $b, obj: {key: "value", block: """
           block string uses \"""
         """})
@@ -165,6 +168,11 @@ describe('Printer', () => {
         unnamed(truthy: true, falsey: false, nullish: null)
         query
       }
-    `);
+
+      {
+        __typename
+      }
+    `),
+    );
   });
 });

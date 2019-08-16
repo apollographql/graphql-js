@@ -1,50 +1,51 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// @flow strict
 
-// 80+ char lines are useful in describe/it, so ignore in this file.
-/* eslint-disable max-len */
-
-import { describe, it } from 'mocha';
 import { expect } from 'chai';
+import { describe, it } from 'mocha';
+
 import dedent from '../../jsutils/dedent';
-import { printSchema, printIntrospectionSchema } from '../schemaPrinter';
+
+import { DirectiveLocation } from '../../language/directiveLocation';
+
+import { GraphQLSchema } from '../../type/schema';
+import { GraphQLDirective } from '../../type/directives';
+import { GraphQLInt, GraphQLString, GraphQLBoolean } from '../../type/scalars';
 import {
-  GraphQLSchema,
-  GraphQLInputObjectType,
+  assertObjectType,
+  GraphQLList,
+  GraphQLNonNull,
   GraphQLScalarType,
   GraphQLObjectType,
   GraphQLInterfaceType,
   GraphQLUnionType,
   GraphQLEnumType,
-  GraphQLString,
-  GraphQLInt,
-  GraphQLBoolean,
-  GraphQLList,
-  GraphQLNonNull,
-} from '../../';
+  GraphQLInputObjectType,
+} from '../../type/definition';
+
+import { buildSchema } from '../buildASTSchema';
+import { printSchema, printIntrospectionSchema } from '../schemaPrinter';
 
 function printForTest(schema) {
-  return printSchema(schema);
+  const schemaText = printSchema(schema);
+  // keep printSchema and buildSchema in sync
+  expect(printSchema(buildSchema(schemaText))).to.equal(schemaText);
+  return schemaText;
 }
 
 function printSingleFieldSchema(fieldConfig) {
-  const Root = new GraphQLObjectType({
-    name: 'Root',
+  const Query = new GraphQLObjectType({
+    name: 'Query',
     fields: { singleField: fieldConfig },
   });
-  return printForTest(new GraphQLSchema({ query: Root }));
+  return printForTest(new GraphQLSchema({ query: Query }));
 }
 
 function listOf(type) {
-  return new GraphQLList(type);
+  return GraphQLList(type);
 }
 
 function nonNull(type) {
-  return new GraphQLNonNull(type);
+  return GraphQLNonNull(type);
 }
 
 describe('Type System Printer', () => {
@@ -53,11 +54,7 @@ describe('Type System Printer', () => {
       type: GraphQLString,
     });
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
-      type Root {
+      type Query {
         singleField: String
       }
     `);
@@ -68,11 +65,7 @@ describe('Type System Printer', () => {
       type: listOf(GraphQLString),
     });
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
-      type Root {
+      type Query {
         singleField: [String]
       }
     `);
@@ -83,11 +76,7 @@ describe('Type System Printer', () => {
       type: nonNull(GraphQLString),
     });
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
-      type Root {
+      type Query {
         singleField: String!
       }
     `);
@@ -98,11 +87,7 @@ describe('Type System Printer', () => {
       type: nonNull(listOf(GraphQLString)),
     });
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
-      type Root {
+      type Query {
         singleField: [String]!
       }
     `);
@@ -113,11 +98,7 @@ describe('Type System Printer', () => {
       type: listOf(nonNull(GraphQLString)),
     });
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
-      type Root {
+      type Query {
         singleField: [String!]
       }
     `);
@@ -128,11 +109,7 @@ describe('Type System Printer', () => {
       type: nonNull(listOf(nonNull(GraphQLString))),
     });
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
-      type Root {
+      type Query {
         singleField: [String!]!
       }
     `);
@@ -144,24 +121,11 @@ describe('Type System Printer', () => {
       fields: { str: { type: GraphQLString } },
     });
 
-    const Root = new GraphQLObjectType({
-      name: 'Root',
-      fields: { foo: { type: FooType } },
-    });
-
-    const Schema = new GraphQLSchema({ query: Root });
+    const Schema = new GraphQLSchema({ types: [FooType] });
     const output = printForTest(Schema);
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
       type Foo {
         str: String
-      }
-
-      type Root {
-        foo: Foo
       }
     `);
   });
@@ -172,11 +136,7 @@ describe('Type System Printer', () => {
       args: { argOne: { type: GraphQLInt } },
     });
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
-      type Root {
+      type Query {
         singleField(argOne: Int): String
       }
     `);
@@ -188,14 +148,25 @@ describe('Type System Printer', () => {
       args: { argOne: { type: GraphQLInt, defaultValue: 2 } },
     });
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
-      type Root {
+      type Query {
         singleField(argOne: Int = 2): String
       }
     `);
+  });
+
+  it('Prints String Field With String Arg With Default', () => {
+    const output = printSingleFieldSchema({
+      type: GraphQLString,
+      args: { argOne: { type: GraphQLString, defaultValue: 'tes\t de\fault' } },
+    });
+    expect(output).to.equal(
+      // $FlowFixMe
+      dedent(String.raw`
+        type Query {
+          singleField(argOne: String = "tes\t de\fault"): String
+        }
+      `),
+    );
   });
 
   it('Prints String Field With Int Arg With Default Null', () => {
@@ -204,11 +175,7 @@ describe('Type System Printer', () => {
       args: { argOne: { type: GraphQLInt, defaultValue: null } },
     });
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
-      type Root {
+      type Query {
         singleField(argOne: Int = null): String
       }
     `);
@@ -220,11 +187,7 @@ describe('Type System Printer', () => {
       args: { argOne: { type: nonNull(GraphQLInt) } },
     });
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
-      type Root {
+      type Query {
         singleField(argOne: Int!): String
       }
     `);
@@ -239,11 +202,7 @@ describe('Type System Printer', () => {
       },
     });
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
-      type Root {
+      type Query {
         singleField(argOne: Int, argTwo: String): String
       }
     `);
@@ -259,11 +218,7 @@ describe('Type System Printer', () => {
       },
     });
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
-      type Root {
+      type Query {
         singleField(argOne: Int = 1, argTwo: String, argThree: Boolean): String
       }
     `);
@@ -279,11 +234,7 @@ describe('Type System Printer', () => {
       },
     });
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
-      type Root {
+      type Query {
         singleField(argOne: Int, argTwo: String = "foo", argThree: Boolean): String
       }
     `);
@@ -299,12 +250,29 @@ describe('Type System Printer', () => {
       },
     });
     expect(output).to.equal(dedent`
+      type Query {
+        singleField(argOne: Int, argTwo: String, argThree: Boolean = false): String
+      }
+    `);
+  });
+
+  it('Prints custom query root type', () => {
+    const CustomQueryType = new GraphQLObjectType({
+      name: 'CustomQueryType',
+      fields: { bar: { type: GraphQLString } },
+    });
+
+    const Schema = new GraphQLSchema({
+      query: CustomQueryType,
+    });
+    const output = printForTest(Schema);
+    expect(output).to.equal(dedent`
       schema {
-        query: Root
+        query: CustomQueryType
       }
 
-      type Root {
-        singleField(argOne: Int, argTwo: String, argThree: Boolean = false): String
+      type CustomQueryType {
+        bar: String
       }
     `);
   });
@@ -321,31 +289,15 @@ describe('Type System Printer', () => {
       interfaces: [FooType],
     });
 
-    const Root = new GraphQLObjectType({
-      name: 'Root',
-      fields: { bar: { type: BarType } },
-    });
-
-    const Schema = new GraphQLSchema({
-      query: Root,
-      types: [BarType],
-    });
+    const Schema = new GraphQLSchema({ types: [BarType] });
     const output = printForTest(Schema);
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
       type Bar implements Foo {
         str: String
       }
 
       interface Foo {
         str: String
-      }
-
-      type Root {
-        bar: Bar
       }
     `);
   });
@@ -370,36 +322,20 @@ describe('Type System Printer', () => {
       interfaces: [FooType, BaazType],
     });
 
-    const Root = new GraphQLObjectType({
-      name: 'Root',
-      fields: { bar: { type: BarType } },
-    });
-
-    const Schema = new GraphQLSchema({
-      query: Root,
-      types: [BarType],
-    });
+    const Schema = new GraphQLSchema({ types: [BarType] });
     const output = printForTest(Schema);
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
       interface Baaz {
         int: Int
       }
 
-      type Bar implements Foo, Baaz {
+      type Bar implements Foo & Baaz {
         str: String
         int: Int
       }
 
       interface Foo {
         str: String
-      }
-
-      type Root {
-        bar: Bar
       }
     `);
   });
@@ -429,21 +365,9 @@ describe('Type System Printer', () => {
       types: [FooType, BarType],
     });
 
-    const Root = new GraphQLObjectType({
-      name: 'Root',
-      fields: {
-        single: { type: SingleUnion },
-        multiple: { type: MultipleUnion },
-      },
-    });
-
-    const Schema = new GraphQLSchema({ query: Root });
+    const Schema = new GraphQLSchema({ types: [SingleUnion, MultipleUnion] });
     const output = printForTest(Schema);
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
       type Bar {
         str: String
       }
@@ -453,11 +377,6 @@ describe('Type System Printer', () => {
       }
 
       union MultipleUnion = Foo | Bar
-
-      type Root {
-        single: SingleUnion
-        multiple: MultipleUnion
-      }
 
       union SingleUnion = Foo
     `);
@@ -471,60 +390,22 @@ describe('Type System Printer', () => {
       },
     });
 
-    const Root = new GraphQLObjectType({
-      name: 'Root',
-      fields: {
-        str: {
-          type: GraphQLString,
-          args: { argOne: { type: InputType } },
-        },
-      },
-    });
-
-    const Schema = new GraphQLSchema({ query: Root });
+    const Schema = new GraphQLSchema({ types: [InputType] });
     const output = printForTest(Schema);
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
       input InputType {
         int: Int
-      }
-
-      type Root {
-        str(argOne: InputType): String
       }
     `);
   });
 
   it('Custom Scalar', () => {
-    const OddType = new GraphQLScalarType({
-      name: 'Odd',
-      serialize(value) {
-        return value % 2 === 1 ? value : null;
-      },
-    });
+    const OddType = new GraphQLScalarType({ name: 'Odd' });
 
-    const Root = new GraphQLObjectType({
-      name: 'Root',
-      fields: {
-        odd: { type: OddType },
-      },
-    });
-
-    const Schema = new GraphQLSchema({ query: Root });
+    const Schema = new GraphQLSchema({ types: [OddType] });
     const output = printForTest(Schema);
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
       scalar Odd
-
-      type Root {
-        odd: Odd
-      }
     `);
   });
 
@@ -532,52 +413,98 @@ describe('Type System Printer', () => {
     const RGBType = new GraphQLEnumType({
       name: 'RGB',
       values: {
-        RED: { value: 0 },
-        GREEN: { value: 1 },
-        BLUE: { value: 2 },
+        RED: {},
+        GREEN: {},
+        BLUE: {},
       },
     });
 
-    const Root = new GraphQLObjectType({
-      name: 'Root',
-      fields: {
-        rgb: { type: RGBType },
-      },
-    });
-
-    const Schema = new GraphQLSchema({ query: Root });
+    const Schema = new GraphQLSchema({ types: [RGBType] });
     const output = printForTest(Schema);
     expect(output).to.equal(dedent`
-      schema {
-        query: Root
-      }
-
       enum RGB {
         RED
         GREEN
         BLUE
       }
-
-      type Root {
-        rgb: RGB
-      }
     `);
   });
 
-  it('Print Introspection Schema', () => {
-    const Root = new GraphQLObjectType({
-      name: 'Root',
-      fields: {
-        onlyField: { type: GraphQLString },
-      },
+  it('Prints empty types', () => {
+    const Schema = new GraphQLSchema({
+      types: [
+        new GraphQLEnumType({ name: 'SomeEnum', values: {} }),
+        new GraphQLInputObjectType({ name: 'SomeInputObject', fields: {} }),
+        new GraphQLInterfaceType({ name: 'SomeInterface', fields: {} }),
+        new GraphQLObjectType({ name: 'SomeObject', fields: {} }),
+        new GraphQLUnionType({ name: 'SomeUnion', types: [] }),
+      ],
     });
-    const Schema = new GraphQLSchema({ query: Root });
+
+    const output = printForTest(Schema);
+    expect(output).to.equal(dedent`
+      enum SomeEnum
+
+      input SomeInputObject
+
+      interface SomeInterface
+
+      type SomeObject
+
+      union SomeUnion
+    `);
+  });
+
+  it('Prints custom directives', () => {
+    const SimpleDirective = new GraphQLDirective({
+      name: 'simpleDirective',
+      locations: [DirectiveLocation.FIELD],
+    });
+    const ComplexDirective = new GraphQLDirective({
+      name: 'complexDirective',
+      description: 'Complex Directive',
+      args: {
+        stringArg: { type: GraphQLString },
+        intArg: { type: GraphQLInt, defaultValue: -1 },
+      },
+      isRepeatable: true,
+      locations: [DirectiveLocation.FIELD, DirectiveLocation.QUERY],
+    });
+
+    const Schema = new GraphQLSchema({
+      directives: [SimpleDirective, ComplexDirective],
+    });
+    const output = printForTest(Schema);
+    expect(output).to.equal(dedent`
+      directive @simpleDirective on FIELD
+
+      """Complex Directive"""
+      directive @complexDirective(stringArg: String, intArg: Int = -1) repeatable on FIELD | QUERY
+    `);
+  });
+
+  it('One-line prints a short description', () => {
+    const description = 'This field is awesome';
+    const output = printSingleFieldSchema({
+      type: GraphQLString,
+      description,
+    });
+    expect(output).to.equal(dedent`
+      type Query {
+        """This field is awesome"""
+        singleField: String
+      }
+    `);
+    const schema = buildSchema(output);
+    const recreatedRoot = assertObjectType(schema.getTypeMap().Query);
+    const recreatedField = recreatedRoot.getFields().singleField;
+    expect(recreatedField).to.include({ description });
+  });
+
+  it('Print Introspection Schema', () => {
+    const Schema = new GraphQLSchema({});
     const output = printIntrospectionSchema(Schema);
     const introspectionSchema = dedent`
-      schema {
-        query: Root
-      }
-
       """
       Directs the executor to include this field or fragment only when the \`if\` argument is true.
       """
@@ -598,8 +525,8 @@ describe('Type System Printer', () => {
       directive @deprecated(
         """
         Explains why this element was deprecated, usually also including a suggestion
-        for how to access supported similar data. Formatted in
-        [Markdown](https://daringfireball.net/projects/markdown/).
+        for how to access supported similar data. Formatted using the Markdown syntax
+        (as specified by [CommonMark](https://commonmark.org/).
         """
         reason: String = "No longer supported"
       ) on FIELD_DEFINITION | ENUM_VALUE
@@ -617,9 +544,6 @@ describe('Type System Printer', () => {
         description: String
         locations: [__DirectiveLocation!]!
         args: [__InputValue!]!
-        onOperation: Boolean! @deprecated(reason: "Use \`locations\`.")
-        onFragment: Boolean! @deprecated(reason: "Use \`locations\`.")
-        onField: Boolean! @deprecated(reason: "Use \`locations\`.")
       }
 
       """
@@ -647,6 +571,9 @@ describe('Type System Printer', () => {
 
         """Location adjacent to an inline fragment."""
         INLINE_FRAGMENT
+
+        """Location adjacent to a variable definition."""
+        VARIABLE_DEFINITION
 
         """Location adjacent to a schema definition."""
         SCHEMA
@@ -808,21 +735,11 @@ describe('Type System Printer', () => {
   });
 
   it('Print Introspection Schema with comment descriptions', () => {
-    const Root = new GraphQLObjectType({
-      name: 'Root',
-      fields: {
-        onlyField: { type: GraphQLString },
-      },
-    });
-    const Schema = new GraphQLSchema({ query: Root });
+    const Schema = new GraphQLSchema({});
     const output = printIntrospectionSchema(Schema, {
       commentDescriptions: true,
     });
     const introspectionSchema = dedent`
-      schema {
-        query: Root
-      }
-
       # Directs the executor to include this field or fragment only when the \`if\` argument is true.
       directive @include(
         # Included when true.
@@ -838,8 +755,8 @@ describe('Type System Printer', () => {
       # Marks an element of a GraphQL schema as no longer supported.
       directive @deprecated(
         # Explains why this element was deprecated, usually also including a suggestion
-        # for how to access supported similar data. Formatted in
-        # [Markdown](https://daringfireball.net/projects/markdown/).
+        # for how to access supported similar data. Formatted using the Markdown syntax
+        # (as specified by [CommonMark](https://commonmark.org/).
         reason: String = "No longer supported"
       ) on FIELD_DEFINITION | ENUM_VALUE
 
@@ -854,9 +771,6 @@ describe('Type System Printer', () => {
         description: String
         locations: [__DirectiveLocation!]!
         args: [__InputValue!]!
-        onOperation: Boolean! @deprecated(reason: "Use \`locations\`.")
-        onFragment: Boolean! @deprecated(reason: "Use \`locations\`.")
-        onField: Boolean! @deprecated(reason: "Use \`locations\`.")
       }
 
       # A Directive can be adjacent to many parts of the GraphQL language, a
@@ -882,6 +796,9 @@ describe('Type System Printer', () => {
 
         # Location adjacent to an inline fragment.
         INLINE_FRAGMENT
+
+        # Location adjacent to a variable definition.
+        VARIABLE_DEFINITION
 
         # Location adjacent to a schema definition.
         SCHEMA

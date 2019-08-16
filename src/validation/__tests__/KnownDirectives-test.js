@@ -1,26 +1,37 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
-
-// 80+ char lines are useful in tests, so ignore in this file.
-/* eslint-disable max-len */
+// @flow strict
 
 import { describe, it } from 'mocha';
-import { expectPassesRule, expectFailsRule } from './harness';
+
+import { buildSchema } from '../../utilities/buildASTSchema';
+
 import {
   KnownDirectives,
   unknownDirectiveMessage,
   misplacedDirectiveMessage,
 } from '../rules/KnownDirectives';
 
+import { expectValidationErrors, expectSDLValidationErrors } from './harness';
+
+function expectErrors(queryStr) {
+  return expectValidationErrors(KnownDirectives, queryStr);
+}
+
+function expectValid(queryStr) {
+  expectErrors(queryStr).to.deep.equal([]);
+}
+
+function expectSDLErrors(sdlStr, schema) {
+  return expectSDLValidationErrors(schema, KnownDirectives, sdlStr);
+}
+
+function expectValidSDL(sdlStr, schema) {
+  expectSDLErrors(sdlStr, schema).to.deep.equal([]);
+}
+
 function unknownDirective(directiveName, line, column) {
   return {
     message: unknownDirectiveMessage(directiveName),
     locations: [{ line, column }],
-    path: undefined,
   };
 }
 
@@ -28,15 +39,26 @@ function misplacedDirective(directiveName, placement, line, column) {
   return {
     message: misplacedDirectiveMessage(directiveName, placement),
     locations: [{ line, column }],
-    path: undefined,
   };
 }
 
+const schemaWithSDLDirectives = buildSchema(`
+  directive @onSchema on SCHEMA
+  directive @onScalar on SCALAR
+  directive @onObject on OBJECT
+  directive @onFieldDefinition on FIELD_DEFINITION
+  directive @onArgumentDefinition on ARGUMENT_DEFINITION
+  directive @onInterface on INTERFACE
+  directive @onUnion on UNION
+  directive @onEnum on ENUM
+  directive @onEnumValue on ENUM_VALUE
+  directive @onInputObject on INPUT_OBJECT
+  directive @onInputFieldDefinition on INPUT_FIELD_DEFINITION
+`);
+
 describe('Validate: Known directives', () => {
   it('with no directives', () => {
-    expectPassesRule(
-      KnownDirectives,
-      `
+    expectValid(`
       query Foo {
         name
         ...Frag
@@ -45,14 +67,11 @@ describe('Validate: Known directives', () => {
       fragment Frag on Dog {
         name
       }
-    `,
-    );
+    `);
   });
 
   it('with known directives', () => {
-    expectPassesRule(
-      KnownDirectives,
-      `
+    expectValid(`
       {
         dog @include(if: true) {
           name
@@ -61,28 +80,21 @@ describe('Validate: Known directives', () => {
           name
         }
       }
-    `,
-    );
+    `);
   });
 
   it('with unknown directive', () => {
-    expectFailsRule(
-      KnownDirectives,
-      `
+    expectErrors(`
       {
         dog @unknown(directive: "value") {
           name
         }
       }
-    `,
-      [unknownDirective('unknown', 3, 13)],
-    );
+    `).to.deep.equal([unknownDirective('unknown', 3, 13)]);
   });
 
   it('with many unknown directives', () => {
-    expectFailsRule(
-      KnownDirectives,
-      `
+    expectErrors(`
       {
         dog @unknown(directive: "value") {
           name
@@ -94,21 +106,17 @@ describe('Validate: Known directives', () => {
           }
         }
       }
-    `,
-      [
-        unknownDirective('unknown', 3, 13),
-        unknownDirective('unknown', 6, 15),
-        unknownDirective('unknown', 8, 16),
-      ],
-    );
+    `).to.deep.equal([
+      unknownDirective('unknown', 3, 13),
+      unknownDirective('unknown', 6, 15),
+      unknownDirective('unknown', 8, 16),
+    ]);
   });
 
   it('with well placed directives', () => {
-    expectPassesRule(
-      KnownDirectives,
-      `
-      query Foo @onQuery {
-        name @include(if: true)
+    expectValid(`
+      query Foo($var: Boolean) @onQuery {
+        name @include(if: $var)
         ...Frag @include(if: true)
         skippedField @skip(if: true)
         ...SkippedFrag @skip(if: true)
@@ -117,145 +125,225 @@ describe('Validate: Known directives', () => {
       mutation Bar @onMutation {
         someField
       }
-    `,
-    );
+    `);
+  });
+
+  it('with well placed variable definition directive', () => {
+    expectValid(`
+      query Foo($var: Boolean @onVariableDefinition) {
+        name
+      }
+    `);
   });
 
   it('with misplaced directives', () => {
-    expectFailsRule(
-      KnownDirectives,
-      `
-      query Foo @include(if: true) {
-        name @onQuery
+    expectErrors(`
+      query Foo($var: Boolean) @include(if: true) {
+        name @onQuery @include(if: $var)
         ...Frag @onQuery
       }
 
       mutation Bar @onQuery {
         someField
       }
-    `,
-      [
-        misplacedDirective('include', 'QUERY', 2, 17),
-        misplacedDirective('onQuery', 'FIELD', 3, 14),
-        misplacedDirective('onQuery', 'FRAGMENT_SPREAD', 4, 17),
-        misplacedDirective('onQuery', 'MUTATION', 7, 20),
-      ],
-    );
+    `).to.deep.equal([
+      misplacedDirective('include', 'QUERY', 2, 32),
+      misplacedDirective('onQuery', 'FIELD', 3, 14),
+      misplacedDirective('onQuery', 'FRAGMENT_SPREAD', 4, 17),
+      misplacedDirective('onQuery', 'MUTATION', 7, 20),
+    ]);
   });
 
-  describe('within schema language', () => {
-    it('with well placed directives', () => {
-      expectPassesRule(
-        KnownDirectives,
+  it('with misplaced variable definition directive', () => {
+    expectErrors(`
+      query Foo($var: Boolean @onField) {
+        name
+      }
+    `).to.deep.equal([
+      misplacedDirective('onField', 'VARIABLE_DEFINITION', 2, 31),
+    ]);
+  });
+
+  describe('within SDL', () => {
+    it('with directive defined inside SDL', () => {
+      expectValidSDL(`
+        type Query {
+          foo: String @test
+        }
+
+        directive @test on FIELD_DEFINITION
+      `);
+    });
+
+    it('with standard directive', () => {
+      expectValidSDL(`
+        type Query {
+          foo: String @deprecated
+        }
+      `);
+    });
+
+    it('with overridden standard directive', () => {
+      expectValidSDL(`
+        schema @deprecated {
+          query: Query
+        }
+        directive @deprecated on SCHEMA
+      `);
+    });
+
+    it('with directive defined in schema extension', () => {
+      const schema = buildSchema(`
+        type Query {
+          foo: String
+        }
+      `);
+      expectValidSDL(
         `
-        type MyObj implements MyInterface @onObject {
-          myField(myArg: Int @onArgumentDefinition): String @onFieldDefinition
+          directive @test on OBJECT
+
+          extend type Query @test
+        `,
+        schema,
+      );
+    });
+
+    it('with directive used in schema extension', () => {
+      const schema = buildSchema(`
+        directive @test on OBJECT
+
+        type Query {
+          foo: String
         }
+      `);
+      expectValidSDL(
+        `
+          extend type Query @test
+        `,
+        schema,
+      );
+    });
 
-        extend type MyObj @onObject
-
-        scalar MyScalar @onScalar
-
-        extend scalar MyScalar @onScalar
-
-        interface MyInterface @onInterface {
-          myField(myArg: Int @onArgumentDefinition): String @onFieldDefinition
+    it('with unknown directive in schema extension', () => {
+      const schema = buildSchema(`
+        type Query {
+          foo: String
         }
+      `);
+      expectSDLErrors(
+        `
+          extend type Query @unknown
+        `,
+        schema,
+      ).to.deep.equal([unknownDirective('unknown', 2, 29)]);
+    });
 
-        extend interface MyInterface @onInterface
+    it('with well placed directives', () => {
+      expectValidSDL(
+        `
+          type MyObj implements MyInterface @onObject {
+            myField(myArg: Int @onArgumentDefinition): String @onFieldDefinition
+          }
 
-        union MyUnion @onUnion = MyObj | Other
+          extend type MyObj @onObject
 
-        extend union MyUnion @onUnion
+          scalar MyScalar @onScalar
 
-        enum MyEnum @onEnum {
-          MY_VALUE @onEnumValue
-        }
+          extend scalar MyScalar @onScalar
 
-        extend enum MyEnum @onEnum
+          interface MyInterface @onInterface {
+            myField(myArg: Int @onArgumentDefinition): String @onFieldDefinition
+          }
 
-        input MyInput @onInputObject {
-          myField: Int @onInputFieldDefinition
-        }
+          extend interface MyInterface @onInterface
 
-        extend input MyInput @onInputObject
+          union MyUnion @onUnion = MyObj | Other
 
-        schema @onSchema {
-          query: MyQuery
-        }
-      `,
+          extend union MyUnion @onUnion
+
+          enum MyEnum @onEnum {
+            MY_VALUE @onEnumValue
+          }
+
+          extend enum MyEnum @onEnum
+
+          input MyInput @onInputObject {
+            myField: Int @onInputFieldDefinition
+          }
+
+          extend input MyInput @onInputObject
+
+          schema @onSchema {
+            query: MyQuery
+          }
+
+          extend schema @onSchema
+        `,
+        schemaWithSDLDirectives,
       );
     });
 
     it('with misplaced directives', () => {
-      expectFailsRule(
-        KnownDirectives,
+      expectSDLErrors(
         `
-        type MyObj implements MyInterface @onInterface {
-          myField(myArg: Int @onInputFieldDefinition): String @onInputFieldDefinition
-        }
+          type MyObj implements MyInterface @onInterface {
+            myField(myArg: Int @onInputFieldDefinition): String @onInputFieldDefinition
+          }
 
-        scalar MyScalar @onEnum
+          scalar MyScalar @onEnum
 
-        interface MyInterface @onObject {
-          myField(myArg: Int @onInputFieldDefinition): String @onInputFieldDefinition
-        }
+          interface MyInterface @onObject {
+            myField(myArg: Int @onInputFieldDefinition): String @onInputFieldDefinition
+          }
 
-        union MyUnion @onEnumValue = MyObj | Other
+          union MyUnion @onEnumValue = MyObj | Other
 
-        enum MyEnum @onScalar {
-          MY_VALUE @onUnion
-        }
+          enum MyEnum @onScalar {
+            MY_VALUE @onUnion
+          }
 
-        input MyInput @onEnum {
-          myField: Int @onArgumentDefinition
-        }
+          input MyInput @onEnum {
+            myField: Int @onArgumentDefinition
+          }
 
-        schema @onObject {
-          query: MyQuery
-        }
-      `,
-        [
-          misplacedDirective('onInterface', 'OBJECT', 2, 43),
-          misplacedDirective(
-            'onInputFieldDefinition',
-            'ARGUMENT_DEFINITION',
-            3,
-            30,
-          ),
-          misplacedDirective(
-            'onInputFieldDefinition',
-            'FIELD_DEFINITION',
-            3,
-            63,
-          ),
-          misplacedDirective('onEnum', 'SCALAR', 6, 25),
-          misplacedDirective('onObject', 'INTERFACE', 8, 31),
-          misplacedDirective(
-            'onInputFieldDefinition',
-            'ARGUMENT_DEFINITION',
-            9,
-            30,
-          ),
-          misplacedDirective(
-            'onInputFieldDefinition',
-            'FIELD_DEFINITION',
-            9,
-            63,
-          ),
-          misplacedDirective('onEnumValue', 'UNION', 12, 23),
-          misplacedDirective('onScalar', 'ENUM', 14, 21),
-          misplacedDirective('onUnion', 'ENUM_VALUE', 15, 20),
-          misplacedDirective('onEnum', 'INPUT_OBJECT', 18, 23),
-          misplacedDirective(
-            'onArgumentDefinition',
-            'INPUT_FIELD_DEFINITION',
-            19,
-            24,
-          ),
-          misplacedDirective('onObject', 'SCHEMA', 22, 16),
-        ],
-      );
+          schema @onObject {
+            query: MyQuery
+          }
+
+          extend schema @onObject
+        `,
+        schemaWithSDLDirectives,
+      ).to.deep.equal([
+        misplacedDirective('onInterface', 'OBJECT', 2, 45),
+        misplacedDirective(
+          'onInputFieldDefinition',
+          'ARGUMENT_DEFINITION',
+          3,
+          32,
+        ),
+        misplacedDirective('onInputFieldDefinition', 'FIELD_DEFINITION', 3, 65),
+        misplacedDirective('onEnum', 'SCALAR', 6, 27),
+        misplacedDirective('onObject', 'INTERFACE', 8, 33),
+        misplacedDirective(
+          'onInputFieldDefinition',
+          'ARGUMENT_DEFINITION',
+          9,
+          32,
+        ),
+        misplacedDirective('onInputFieldDefinition', 'FIELD_DEFINITION', 9, 65),
+        misplacedDirective('onEnumValue', 'UNION', 12, 25),
+        misplacedDirective('onScalar', 'ENUM', 14, 23),
+        misplacedDirective('onUnion', 'ENUM_VALUE', 15, 22),
+        misplacedDirective('onEnum', 'INPUT_OBJECT', 18, 25),
+        misplacedDirective(
+          'onArgumentDefinition',
+          'INPUT_FIELD_DEFINITION',
+          19,
+          26,
+        ),
+        misplacedDirective('onObject', 'SCHEMA', 22, 18),
+        misplacedDirective('onObject', 'SCHEMA', 26, 25),
+      ]);
     });
   });
 });

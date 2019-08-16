@@ -1,18 +1,12 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import invariant from '../jsutils/invariant';
+import devAssert from '../jsutils/devAssert';
+import defineToStringTag from '../jsutils/defineToStringTag';
 
-type Location = {
+type Location = {|
   line: number,
   column: number,
-};
+|};
 
 /**
  * A representation of source input to GraphQL.
@@ -31,13 +25,16 @@ export class Source {
     this.body = body;
     this.name = name || 'GraphQL request';
     this.locationOffset = locationOffset || { line: 1, column: 1 };
-    invariant(
+    devAssert(
       this.locationOffset.line > 0,
       'line in locationOffset is 1-indexed and must be positive',
     );
-    invariant(
+    devAssert(
       this.locationOffset.column > 0,
       'column in locationOffset is 1-indexed and must be positive',
     );
   }
 }
+
+// Conditionally apply `[Symbol.toStringTag]` if `Symbol`s are supported
+defineToStringTag(Source);

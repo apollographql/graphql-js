@@ -1,14 +1,8 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
+
+import { type ASTNode } from '../language/ast';
 
 import { GraphQLError } from './GraphQLError';
-import type { ASTNode } from '../language/ast';
 
 /**
  * Given an arbitrary Error, presumably thrown while attempting to execute a
@@ -16,7 +10,7 @@ import type { ASTNode } from '../language/ast';
  * document responsible for the original Error.
  */
 export function locatedError(
-  originalError: Error,
+  originalError: Error | GraphQLError,
   nodes: $ReadOnlyArray<ASTNode>,
   path: $ReadOnlyArray<string | number>,
 ): GraphQLError {
@@ -33,6 +27,5 @@ export function locatedError(
     originalError && (originalError: any).positions,
     path,
     originalError,
-    originalError && (originalError: any).extensions,
   );
 }

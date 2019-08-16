@@ -1,24 +1,21 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// @flow strict
+
+import EventEmitter from 'events';
 
 import { expect } from 'chai';
 import { describe, it } from 'mocha';
-import EventEmitter from 'events';
+
+import { parse } from '../../language/parser';
+
+import { GraphQLError } from '../../error/GraphQLError';
+
+import { GraphQLSchema } from '../../type/schema';
+import { GraphQLList, GraphQLObjectType } from '../../type/definition';
+import { GraphQLInt, GraphQLString, GraphQLBoolean } from '../../type/scalars';
+
+import { createSourceEventStream, subscribe } from '../subscribe';
+
 import eventEmitterAsyncIterator from './eventEmitterAsyncIterator';
-import { subscribe } from '../subscribe';
-import { parse } from '../../language';
-import {
-  GraphQLSchema,
-  GraphQLObjectType,
-  GraphQLList,
-  GraphQLBoolean,
-  GraphQLInt,
-  GraphQLString,
-} from '../../type';
 
 const EmailType = new GraphQLObjectType({
   name: 'Email',
@@ -41,7 +38,7 @@ const InboxType = new GraphQLObjectType({
       type: GraphQLInt,
       resolve: inbox => inbox.emails.filter(email => email.unread).length,
     },
-    emails: { type: new GraphQLList(EmailType) },
+    emails: { type: GraphQLList(EmailType) },
   },
 });
 
@@ -109,7 +106,7 @@ async function createSubscription(pubsub, schema = emailSchema, ast, vars) {
     });
   }
 
-  const defaultAst = parse(`
+  const defaultAST = parse(`
     subscription ($priority: Int = 0) {
       importantEmail(priority: $priority) {
         email {
@@ -127,7 +124,8 @@ async function createSubscription(pubsub, schema = emailSchema, ast, vars) {
   // `subscribe` returns Promise<AsyncIterator | ExecutionResult>
   return {
     sendImportantEmail,
-    subscription: await subscribe(schema, ast || defaultAst, data, null, vars),
+    // $FlowFixMe
+    subscription: await subscribe(schema, ast || defaultAST, data, null, vars),
   };
 }
 
@@ -161,6 +159,7 @@ describe('Subscription Initialization Phase', () => {
       },
     });
 
+    // $FlowFixMe
     ai.return();
   });
 
@@ -222,6 +221,7 @@ describe('Subscription Initialization Phase', () => {
       importantEmail: {},
     });
 
+    // $FlowFixMe
     await subscription.next();
   });
 
@@ -255,6 +255,7 @@ describe('Subscription Initialization Phase', () => {
       importantEmail: {},
     });
 
+    // $FlowFixMe
     await subscription.next();
   });
 
@@ -295,6 +296,7 @@ describe('Subscription Initialization Phase', () => {
     `);
 
     const subscription = await subscribe(testSchema, ast);
+    // $FlowFixMe
     subscription.next(); // Ask for a result, but ignore it.
 
     expect(didResolveImportantEmail).to.equal(true);
@@ -311,21 +313,28 @@ describe('Subscription Initialization Phase', () => {
       }
     `);
 
-    expectPromiseToThrow(
+    await expectPromiseToThrow(
+      // $DisableFlowOnNegativeTest
       () => subscribe(null, document),
-      'Must provide schema',
+      'Expected null to be a GraphQL schema.',
     );
 
-    expectPromiseToThrow(() => subscribe({ document }), 'Must provide schema');
+    await expectPromiseToThrow(
+      // $DisableFlowOnNegativeTest
+      () => subscribe({ document }),
+      'Expected undefined to be a GraphQL schema.',
+    );
   });
 
   it('throws an error if document is missing', async () => {
-    expectPromiseToThrow(
+    await expectPromiseToThrow(
+      // $DisableFlowOnNegativeTest
       () => subscribe(emailSchema, null),
       'Must provide document',
     );
 
-    expectPromiseToThrow(
+    await expectPromiseToThrow(
+      // $DisableFlowOnNegativeTest
       () => subscribe({ schema: emailSchema }),
       'Must provide document',
     );
@@ -347,7 +356,6 @@ describe('Subscription Initialization Phase', () => {
         {
           message: 'The subscription field "unknownField" is not defined.',
           locations: [{ line: 3, column: 9 }],
-          path: undefined,
         },
       ],
     });
@@ -369,17 +377,17 @@ describe('Subscription Initialization Phase', () => {
 
     const pubsub = new EventEmitter();
 
-    expectPromiseToThrow(
+    await expectPromiseToThrow(
       () => createSubscription(pubsub, invalidEmailSchema),
-      'Subscription must return Async Iterable. Received: test',
+      'Subscription field must return Async Iterable. Received: "test"',
     );
   });
 
   it('resolves to an error for subscription resolver errors', async () => {
     // Returning an error
-    const subscriptionReturningErrorSchema = emailSchemaWithResolvers(() => {
-      return new Error('test error');
-    });
+    const subscriptionReturningErrorSchema = emailSchemaWithResolvers(
+      () => new Error('test error'),
+    );
     await testReportsError(subscriptionReturningErrorSchema);
 
     // Throwing an error
@@ -390,9 +398,7 @@ describe('Subscription Initialization Phase', () => {
 
     // Resolving to an error
     const subscriptionResolvingErrorSchema = emailSchemaWithResolvers(
-      async () => {
-        return new Error('test error');
-      },
+      async () => new Error('test error'),
     );
     await testReportsError(subscriptionResolvingErrorSchema);
 
@@ -407,6 +413,56 @@ describe('Subscription Initialization Phase', () => {
     async function testReportsError(schema) {
       // Promise<AsyncIterable<ExecutionResult> | ExecutionResult>
       const result = await subscribe(
+        schema,
+        parse(`
+          subscription {
+            importantEmail
+          }
+        `),
+      );
+
+      expect(result).to.deep.equal({
+        errors: [
+          {
+            message: 'test error',
+            locations: [{ line: 3, column: 13 }],
+            path: ['importantEmail'],
+          },
+        ],
+      });
+    }
+  });
+
+  it('resolves to an error for source event stream resolver errors', async () => {
+    // Returning an error
+    const subscriptionReturningErrorSchema = emailSchemaWithResolvers(
+      () => new Error('test error'),
+    );
+    await testReportsError(subscriptionReturningErrorSchema);
+
+    // Throwing an error
+    const subscriptionThrowingErrorSchema = emailSchemaWithResolvers(() => {
+      throw new Error('test error');
+    });
+    await testReportsError(subscriptionThrowingErrorSchema);
+
+    // Resolving to an error
+    const subscriptionResolvingErrorSchema = emailSchemaWithResolvers(() =>
+      Promise.resolve(new Error('test error')),
+    );
+    await testReportsError(subscriptionResolvingErrorSchema);
+
+    // Rejecting with an error
+    const subscriptionRejectingErrorSchema = emailSchemaWithResolvers(
+      async () => {
+        throw new Error('test error');
+      },
+    );
+    await testReportsError(subscriptionRejectingErrorSchema);
+
+    async function testReportsError(schema) {
+      // Promise<AsyncIterable<ExecutionResult> | ExecutionResult>
+      const result = await createSourceEventStream(
         schema,
         parse(`
           subscription {
@@ -463,6 +519,7 @@ describe('Subscription Initialization Phase', () => {
       },
     };
 
+    // $FlowFixMe
     const result = await subscribe(emailSchema, ast, data, null, {
       priority: 'meow',
     });
@@ -471,14 +528,13 @@ describe('Subscription Initialization Phase', () => {
       errors: [
         {
           message:
-            'Variable "$priority" got invalid value "meow".\nExpected ' +
-            'type "Int", found "meow": Int cannot represent non 32-bit signed ' +
-            'integer value: meow',
+            'Variable "$priority" got invalid value "meow"; Expected type Int. Int cannot represent non-integer value: "meow"',
           locations: [{ line: 2, column: 21 }],
-          path: undefined,
         },
       ],
     });
+
+    expect(result.errors[0].originalError).not.to.equal(undefined);
   });
 });
 
@@ -830,6 +886,7 @@ describe('Subscription Publish Phase', () => {
       `),
     );
 
+    // $FlowFixMe
     const payload1 = await subscription.next();
     expect(payload1).to.deep.equal({
       done: false,
@@ -880,10 +937,13 @@ describe('Subscription Publish Phase', () => {
   });
 
   it('should pass through error thrown in source event stream', async () => {
-    const erroringEmailSchema = emailSchemaWithResolvers(async function*() {
-      yield { email: { subject: 'Hello' } };
-      throw new Error('test error');
-    }, email => email);
+    const erroringEmailSchema = emailSchemaWithResolvers(
+      async function*() {
+        yield { email: { subject: 'Hello' } };
+        throw new Error('test error');
+      },
+      email => email,
+    );
 
     const subscription = await subscribe(
       erroringEmailSchema,
@@ -898,6 +958,7 @@ describe('Subscription Publish Phase', () => {
       `),
     );
 
+    // $FlowFixMe
     const payload1 = await subscription.next();
     expect(payload1).to.deep.equal({
       done: false,
@@ -920,10 +981,66 @@ describe('Subscription Publish Phase', () => {
     }
 
     expect(expectedError).to.be.instanceof(Error);
-    expect(expectedError.message).to.equal('test error');
+    expect(expectedError).to.have.property('message', 'test error');
 
     const payload2 = await subscription.next();
     expect(payload2).to.deep.equal({
+      done: true,
+      value: undefined,
+    });
+  });
+
+  it('should resolve GraphQL error from source event stream', async () => {
+    const erroringEmailSchema = emailSchemaWithResolvers(
+      async function*() {
+        yield { email: { subject: 'Hello' } };
+        throw new GraphQLError('test error');
+      },
+      email => email,
+    );
+
+    const subscription = await subscribe(
+      erroringEmailSchema,
+      parse(`
+        subscription {
+          importantEmail {
+            email {
+              subject
+            }
+          }
+        }
+      `),
+    );
+
+    // $FlowFixMe
+    const payload1 = await subscription.next();
+    expect(payload1).to.deep.equal({
+      done: false,
+      value: {
+        data: {
+          importantEmail: {
+            email: {
+              subject: 'Hello',
+            },
+          },
+        },
+      },
+    });
+
+    const payload2 = await subscription.next();
+    expect(payload2).to.deep.equal({
+      done: false,
+      value: {
+        errors: [
+          {
+            message: 'test error',
+          },
+        ],
+      },
+    });
+
+    const payload3 = await subscription.next();
+    expect(payload3).to.deep.equal({
       done: true,
       value: undefined,
     });

@@ -1,30 +1,132 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// @flow strict
 
 import { expect } from 'chai';
 import { describe, it } from 'mocha';
+
+import { getNamedType, isCompositeType } from '../../type/definition';
+import { TypeInfo } from '../../utilities/TypeInfo';
+
+import { Kind } from '../kinds';
 import { parse } from '../parser';
 import { print } from '../printer';
-import { readFileSync } from 'fs';
 import { visit, visitInParallel, visitWithTypeInfo, BREAK } from '../visitor';
-import { join } from 'path';
-import { TypeInfo } from '../../utilities/TypeInfo';
+
+import { kitchenSinkQuery } from '../../__fixtures__';
 import { testSchema } from '../../validation/__tests__/harness';
-import { getNamedType, isCompositeType } from '../../type';
+
+function checkVisitorFnArgs(ast, args, isEdited) {
+  const [node, key, parent, path, ancestors] = args;
+
+  expect(node).to.be.an.instanceof(Object);
+  expect(node.kind).to.be.oneOf(Object.values(Kind));
+
+  const isRoot = key === undefined;
+  if (isRoot) {
+    if (!isEdited) {
+      expect(node).to.equal(ast);
+    }
+    expect(parent).to.equal(undefined);
+    expect(path).to.deep.equal([]);
+    expect(ancestors).to.deep.equal([]);
+    return;
+  }
+
+  expect(typeof key).to.be.oneOf(['number', 'string']);
+
+  expect(parent).to.have.property(key);
+
+  expect(path).to.be.an.instanceof(Array);
+  expect(path[path.length - 1]).to.equal(key);
+
+  expect(ancestors).to.be.an.instanceof(Array);
+  expect(ancestors.length).to.equal(path.length - 1);
+
+  if (!isEdited) {
+    let currentNode = ast;
+    for (let i = 0; i < ancestors.length; ++i) {
+      expect(ancestors[i]).to.equal(currentNode);
+
+      currentNode = currentNode[path[i]];
+      expect(currentNode).to.not.equal(undefined);
+    }
+
+    expect(parent).to.equal(currentNode);
+    expect(parent[key]).to.equal(node);
+  }
+}
+
+function getValue(node) {
+  return node.value != null ? node.value : undefined;
+}
 
 describe('Visitor', () => {
+  it('validates path argument', () => {
+    const visited = [];
+
+    const ast = parse('{ a }', { noLocation: true });
+
+    visit(ast, {
+      enter(node, key, parent, path) {
+        checkVisitorFnArgs(ast, arguments);
+        visited.push(['enter', path.slice()]);
+      },
+      leave(node, key, parent, path) {
+        checkVisitorFnArgs(ast, arguments);
+        visited.push(['leave', path.slice()]);
+      },
+    });
+
+    expect(visited).to.deep.equal([
+      ['enter', []],
+      ['enter', ['definitions', 0]],
+      ['enter', ['definitions', 0, 'selectionSet']],
+      ['enter', ['definitions', 0, 'selectionSet', 'selections', 0]],
+      ['enter', ['definitions', 0, 'selectionSet', 'selections', 0, 'name']],
+      ['leave', ['definitions', 0, 'selectionSet', 'selections', 0, 'name']],
+      ['leave', ['definitions', 0, 'selectionSet', 'selections', 0]],
+      ['leave', ['definitions', 0, 'selectionSet']],
+      ['leave', ['definitions', 0]],
+      ['leave', []],
+    ]);
+  });
+
+  it('validates ancestors argument', () => {
+    const ast = parse('{ a }', { noLocation: true });
+    const visitedNodes = [];
+
+    visit(ast, {
+      enter(node, key, parent, path, ancestors) {
+        const inArray = typeof key === 'number';
+        if (inArray) {
+          visitedNodes.push(parent);
+        }
+        visitedNodes.push(node);
+
+        const expectedAncestors = visitedNodes.slice(0, -2);
+        expect(ancestors).to.deep.equal(expectedAncestors);
+      },
+      leave(node, key, parent, path, ancestors) {
+        const expectedAncestors = visitedNodes.slice(0, -2);
+        expect(ancestors).to.deep.equal(expectedAncestors);
+
+        const inArray = typeof key === 'number';
+        if (inArray) {
+          visitedNodes.pop();
+        }
+        visitedNodes.pop();
+      },
+    });
+  });
+
   it('allows editing a node both on enter and on leave', () => {
     const ast = parse('{ a, b, c { a, b, c } }', { noLocation: true });
 
     let selectionSet;
 
-    const editedAst = visit(ast, {
+    const editedAST = visit(ast, {
       OperationDefinition: {
         enter(node) {
+          checkVisitorFnArgs(ast, arguments);
           selectionSet = node.selectionSet;
           return {
             ...node,
@@ -36,6 +138,7 @@ describe('Visitor', () => {
           };
         },
         leave(node) {
+          checkVisitorFnArgs(ast, arguments, /* isEdited */ true);
           return {
             ...node,
             selectionSet,
@@ -45,7 +148,7 @@ describe('Visitor', () => {
       },
     });
 
-    expect(editedAst).to.deep.equal({
+    expect(editedAST).to.deep.equal({
       ...ast,
       definitions: [
         {
@@ -62,9 +165,10 @@ describe('Visitor', () => {
 
     const { definitions } = ast;
 
-    const editedAst = visit(ast, {
+    const editedAST = visit(ast, {
       Document: {
         enter(node) {
+          checkVisitorFnArgs(ast, arguments);
           return {
             ...node,
             definitions: [],
@@ -72,6 +176,7 @@ describe('Visitor', () => {
           };
         },
         leave(node) {
+          checkVisitorFnArgs(ast, arguments, /* isEdited */ true);
           return {
             ...node,
             definitions,
@@ -81,7 +186,7 @@ describe('Visitor', () => {
       },
     });
 
-    expect(editedAst).to.deep.equal({
+    expect(editedAST).to.deep.equal({
       ...ast,
       didEnter: true,
       didLeave: true,
@@ -90,8 +195,9 @@ describe('Visitor', () => {
 
   it('allows for editing on enter', () => {
     const ast = parse('{ a, b, c { a, b, c } }', { noLocation: true });
-    const editedAst = visit(ast, {
+    const editedAST = visit(ast, {
       enter(node) {
+        checkVisitorFnArgs(ast, arguments);
         if (node.kind === 'Field' && node.name.value === 'b') {
           return null;
         }
@@ -102,15 +208,16 @@ describe('Visitor', () => {
       parse('{ a, b, c { a, b, c } }', { noLocation: true }),
     );
 
-    expect(editedAst).to.deep.equal(
+    expect(editedAST).to.deep.equal(
       parse('{ a,    c { a,    c } }', { noLocation: true }),
     );
   });
 
   it('allows for editing on leave', () => {
     const ast = parse('{ a, b, c { a, b, c } }', { noLocation: true });
-    const editedAst = visit(ast, {
+    const editedAST = visit(ast, {
       leave(node) {
+        checkVisitorFnArgs(ast, arguments, /* isEdited */ true);
         if (node.kind === 'Field' && node.name.value === 'b') {
           return null;
         }
@@ -121,7 +228,7 @@ describe('Visitor', () => {
       parse('{ a, b, c { a, b, c } }', { noLocation: true }),
     );
 
-    expect(editedAst).to.deep.equal(
+    expect(editedAST).to.deep.equal(
       parse('{ a,    c { a,    c } }', { noLocation: true }),
     );
   });
@@ -137,9 +244,10 @@ describe('Visitor', () => {
 
     let didVisitAddedField;
 
-    const ast = parse('{ a { x } }');
+    const ast = parse('{ a { x } }', { noLocation: true });
     visit(ast, {
       enter(node) {
+        checkVisitorFnArgs(ast, arguments, /* isEdited */ true);
         if (node.kind === 'Field' && node.name.value === 'a') {
           return {
             kind: 'Field',
@@ -158,17 +266,19 @@ describe('Visitor', () => {
   it('allows skipping a sub-tree', () => {
     const visited = [];
 
-    const ast = parse('{ a, b { x }, c }');
+    const ast = parse('{ a, b { x }, c }', { noLocation: true });
     visit(ast, {
       enter(node) {
-        visited.push(['enter', node.kind, node.value]);
+        checkVisitorFnArgs(ast, arguments);
+        visited.push(['enter', node.kind, getValue(node)]);
         if (node.kind === 'Field' && node.name.value === 'b') {
           return false;
         }
       },
 
       leave(node) {
-        visited.push(['leave', node.kind, node.value]);
+        checkVisitorFnArgs(ast, arguments);
+        visited.push(['leave', node.kind, getValue(node)]);
       },
     });
 
@@ -194,17 +304,19 @@ describe('Visitor', () => {
   it('allows early exit while visiting', () => {
     const visited = [];
 
-    const ast = parse('{ a, b { x }, c }');
+    const ast = parse('{ a, b { x }, c }', { noLocation: true });
     visit(ast, {
       enter(node) {
-        visited.push(['enter', node.kind, node.value]);
+        checkVisitorFnArgs(ast, arguments);
+        visited.push(['enter', node.kind, getValue(node)]);
         if (node.kind === 'Name' && node.value === 'x') {
           return BREAK;
         }
       },
 
       leave(node) {
-        visited.push(['leave', node.kind, node.value]);
+        checkVisitorFnArgs(ast, arguments);
+        visited.push(['leave', node.kind, getValue(node)]);
       },
     });
 
@@ -228,14 +340,16 @@ describe('Visitor', () => {
   it('allows early exit while leaving', () => {
     const visited = [];
 
-    const ast = parse('{ a, b { x }, c }');
+    const ast = parse('{ a, b { x }, c }', { noLocation: true });
     visit(ast, {
       enter(node) {
-        visited.push(['enter', node.kind, node.value]);
+        checkVisitorFnArgs(ast, arguments);
+        visited.push(['enter', node.kind, getValue(node)]);
       },
 
       leave(node) {
-        visited.push(['leave', node.kind, node.value]);
+        checkVisitorFnArgs(ast, arguments);
+        visited.push(['leave', node.kind, getValue(node)]);
         if (node.kind === 'Name' && node.value === 'x') {
           return BREAK;
         }
@@ -263,17 +377,20 @@ describe('Visitor', () => {
   it('allows a named functions visitor API', () => {
     const visited = [];
 
-    const ast = parse('{ a, b { x }, c }');
+    const ast = parse('{ a, b { x }, c }', { noLocation: true });
     visit(ast, {
       Name(node) {
-        visited.push(['enter', node.kind, node.value]);
+        checkVisitorFnArgs(ast, arguments);
+        visited.push(['enter', node.kind, getValue(node)]);
       },
       SelectionSet: {
         enter(node) {
-          visited.push(['enter', node.kind, node.value]);
+          checkVisitorFnArgs(ast, arguments);
+          visited.push(['enter', node.kind, getValue(node)]);
         },
         leave(node) {
-          visited.push(['leave', node.kind, node.value]);
+          checkVisitorFnArgs(ast, arguments);
+          visited.push(['leave', node.kind, getValue(node)]);
         },
       },
     });
@@ -290,25 +407,87 @@ describe('Visitor', () => {
     ]);
   });
 
-  const kitchenSink = readFileSync(join(__dirname, '/kitchen-sink.graphql'), {
-    encoding: 'utf8',
-  });
-
-  it('visits kitchen sink', () => {
-    const ast = parse(kitchenSink);
-
+  it('Experimental: visits variables defined in fragments', () => {
+    const ast = parse('fragment a($v: Boolean = false) on t { f }', {
+      noLocation: true,
+      experimentalFragmentVariables: true,
+    });
     const visited = [];
 
     visit(ast, {
-      enter(node, key, parent) {
-        visited.push(['enter', node.kind, key, parent && parent.kind]);
+      enter(node) {
+        checkVisitorFnArgs(ast, arguments);
+        visited.push(['enter', node.kind, getValue(node)]);
       },
-
-      leave(node, key, parent) {
-        visited.push(['leave', node.kind, key, parent && parent.kind]);
+      leave(node) {
+        checkVisitorFnArgs(ast, arguments);
+        visited.push(['leave', node.kind, getValue(node)]);
       },
     });
 
+    expect(visited).to.deep.equal([
+      ['enter', 'Document', undefined],
+      ['enter', 'FragmentDefinition', undefined],
+      ['enter', 'Name', 'a'],
+      ['leave', 'Name', 'a'],
+      ['enter', 'VariableDefinition', undefined],
+      ['enter', 'Variable', undefined],
+      ['enter', 'Name', 'v'],
+      ['leave', 'Name', 'v'],
+      ['leave', 'Variable', undefined],
+      ['enter', 'NamedType', undefined],
+      ['enter', 'Name', 'Boolean'],
+      ['leave', 'Name', 'Boolean'],
+      ['leave', 'NamedType', undefined],
+      ['enter', 'BooleanValue', false],
+      ['leave', 'BooleanValue', false],
+      ['leave', 'VariableDefinition', undefined],
+      ['enter', 'NamedType', undefined],
+      ['enter', 'Name', 't'],
+      ['leave', 'Name', 't'],
+      ['leave', 'NamedType', undefined],
+      ['enter', 'SelectionSet', undefined],
+      ['enter', 'Field', undefined],
+      ['enter', 'Name', 'f'],
+      ['leave', 'Name', 'f'],
+      ['leave', 'Field', undefined],
+      ['leave', 'SelectionSet', undefined],
+      ['leave', 'FragmentDefinition', undefined],
+      ['leave', 'Document', undefined],
+    ]);
+  });
+
+  it('visits kitchen sink', () => {
+    const ast = parse(kitchenSinkQuery);
+    const visited = [];
+    const argsStack = [];
+
+    visit(ast, {
+      enter(node, key, parent) {
+        visited.push([
+          'enter',
+          node.kind,
+          key,
+          parent && parent.kind != null ? parent.kind : undefined,
+        ]);
+
+        checkVisitorFnArgs(ast, arguments);
+        argsStack.push([...arguments]);
+      },
+
+      leave(node, key, parent) {
+        visited.push([
+          'leave',
+          node.kind,
+          key,
+          parent && parent.kind != null ? parent.kind : undefined,
+        ]);
+
+        expect(argsStack.pop()).to.deep.equal([...arguments]);
+      },
+    });
+
+    expect(argsStack).to.deep.equal([]);
     expect(visited).to.deep.equal([
       ['enter', 'Document', undefined, undefined],
       ['enter', 'OperationDefinition', 0, undefined],
@@ -336,6 +515,10 @@ describe('Visitor', () => {
       ['enter', 'EnumValue', 'defaultValue', 'VariableDefinition'],
       ['leave', 'EnumValue', 'defaultValue', 'VariableDefinition'],
       ['leave', 'VariableDefinition', 1, undefined],
+      ['enter', 'Directive', 0, undefined],
+      ['enter', 'Name', 'name', 'Directive'],
+      ['leave', 'Name', 'name', 'Directive'],
+      ['leave', 'Directive', 0, undefined],
       ['enter', 'SelectionSet', 'selectionSet', 'OperationDefinition'],
       ['enter', 'Field', 0, undefined],
       ['enter', 'Name', 'alias', 'Field'],
@@ -414,6 +597,10 @@ describe('Visitor', () => {
       ['enter', 'FragmentSpread', 1, undefined],
       ['enter', 'Name', 'name', 'FragmentSpread'],
       ['leave', 'Name', 'name', 'FragmentSpread'],
+      ['enter', 'Directive', 0, undefined],
+      ['enter', 'Name', 'name', 'Directive'],
+      ['leave', 'Name', 'name', 'Directive'],
+      ['leave', 'Directive', 0, undefined],
       ['leave', 'FragmentSpread', 1, undefined],
       ['leave', 'SelectionSet', 'selectionSet', 'Field'],
       ['leave', 'Field', 1, undefined],
@@ -456,6 +643,10 @@ describe('Visitor', () => {
       ['enter', 'OperationDefinition', 1, undefined],
       ['enter', 'Name', 'name', 'OperationDefinition'],
       ['leave', 'Name', 'name', 'OperationDefinition'],
+      ['enter', 'Directive', 0, undefined],
+      ['enter', 'Name', 'name', 'Directive'],
+      ['leave', 'Name', 'name', 'Directive'],
+      ['leave', 'Directive', 0, undefined],
       ['enter', 'SelectionSet', 'selectionSet', 'OperationDefinition'],
       ['enter', 'Field', 0, undefined],
       ['enter', 'Name', 'name', 'Field'],
@@ -478,6 +669,10 @@ describe('Visitor', () => {
       ['enter', 'Field', 0, undefined],
       ['enter', 'Name', 'name', 'Field'],
       ['leave', 'Name', 'name', 'Field'],
+      ['enter', 'Directive', 0, undefined],
+      ['enter', 'Name', 'name', 'Directive'],
+      ['leave', 'Name', 'name', 'Directive'],
+      ['leave', 'Directive', 0, undefined],
       ['leave', 'Field', 0, undefined],
       ['leave', 'SelectionSet', 'selectionSet', 'Field'],
       ['leave', 'Field', 0, undefined],
@@ -498,6 +693,10 @@ describe('Visitor', () => {
       ['leave', 'Name', 'name', 'NamedType'],
       ['leave', 'NamedType', 'type', 'VariableDefinition'],
       ['leave', 'VariableDefinition', 0, undefined],
+      ['enter', 'Directive', 0, undefined],
+      ['enter', 'Name', 'name', 'Directive'],
+      ['leave', 'Name', 'name', 'Directive'],
+      ['leave', 'Directive', 0, undefined],
       ['enter', 'SelectionSet', 'selectionSet', 'OperationDefinition'],
       ['enter', 'Field', 0, undefined],
       ['enter', 'Name', 'name', 'Field'],
@@ -548,6 +747,10 @@ describe('Visitor', () => {
       ['enter', 'Name', 'name', 'NamedType'],
       ['leave', 'Name', 'name', 'NamedType'],
       ['leave', 'NamedType', 'typeCondition', 'FragmentDefinition'],
+      ['enter', 'Directive', 0, undefined],
+      ['enter', 'Name', 'name', 'Directive'],
+      ['leave', 'Name', 'name', 'Directive'],
+      ['leave', 'Directive', 0, undefined],
       ['enter', 'SelectionSet', 'selectionSet', 'FragmentDefinition'],
       ['enter', 'Field', 0, undefined],
       ['enter', 'Name', 'name', 'Field'],
@@ -619,6 +822,14 @@ describe('Visitor', () => {
       ['leave', 'Field', 1, undefined],
       ['leave', 'SelectionSet', 'selectionSet', 'OperationDefinition'],
       ['leave', 'OperationDefinition', 4, undefined],
+      ['enter', 'OperationDefinition', 5, undefined],
+      ['enter', 'SelectionSet', 'selectionSet', 'OperationDefinition'],
+      ['enter', 'Field', 0, undefined],
+      ['enter', 'Name', 'name', 'Field'],
+      ['leave', 'Name', 'name', 'Field'],
+      ['leave', 'Field', 0, undefined],
+      ['leave', 'SelectionSet', 'selectionSet', 'OperationDefinition'],
+      ['leave', 'OperationDefinition', 5, undefined],
       ['leave', 'Document', undefined, undefined],
     ]);
   });
@@ -635,14 +846,16 @@ describe('Visitor', () => {
         visitInParallel([
           {
             enter(node) {
-              visited.push(['enter', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['enter', node.kind, getValue(node)]);
               if (node.kind === 'Field' && node.name.value === 'b') {
                 return false;
               }
             },
 
             leave(node) {
-              visited.push(['leave', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['leave', node.kind, getValue(node)]);
             },
           },
         ]),
@@ -676,24 +889,28 @@ describe('Visitor', () => {
         visitInParallel([
           {
             enter(node) {
-              visited.push(['no-a', 'enter', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['no-a', 'enter', node.kind, getValue(node)]);
               if (node.kind === 'Field' && node.name.value === 'a') {
                 return false;
               }
             },
             leave(node) {
-              visited.push(['no-a', 'leave', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['no-a', 'leave', node.kind, getValue(node)]);
             },
           },
           {
             enter(node) {
-              visited.push(['no-b', 'enter', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['no-b', 'enter', node.kind, getValue(node)]);
               if (node.kind === 'Field' && node.name.value === 'b') {
                 return false;
               }
             },
             leave(node) {
-              visited.push(['no-b', 'leave', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['no-b', 'leave', node.kind, getValue(node)]);
             },
           },
         ]),
@@ -748,13 +965,15 @@ describe('Visitor', () => {
         visitInParallel([
           {
             enter(node) {
-              visited.push(['enter', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['enter', node.kind, getValue(node)]);
               if (node.kind === 'Name' && node.value === 'x') {
                 return BREAK;
               }
             },
             leave(node) {
-              visited.push(['leave', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['leave', node.kind, getValue(node)]);
             },
           },
         ]),
@@ -786,24 +1005,28 @@ describe('Visitor', () => {
         visitInParallel([
           {
             enter(node) {
-              visited.push(['break-a', 'enter', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['break-a', 'enter', node.kind, getValue(node)]);
               if (node.kind === 'Name' && node.value === 'a') {
                 return BREAK;
               }
             },
             leave(node) {
-              visited.push(['break-a', 'leave', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['break-a', 'leave', node.kind, getValue(node)]);
             },
           },
           {
             enter(node) {
-              visited.push(['break-b', 'enter', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['break-b', 'enter', node.kind, getValue(node)]);
               if (node.kind === 'Name' && node.value === 'b') {
                 return BREAK;
               }
             },
             leave(node) {
-              visited.push(['break-b', 'leave', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['break-b', 'leave', node.kind, getValue(node)]);
             },
           },
         ]),
@@ -844,10 +1067,12 @@ describe('Visitor', () => {
         visitInParallel([
           {
             enter(node) {
-              visited.push(['enter', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['enter', node.kind, getValue(node)]);
             },
             leave(node) {
-              visited.push(['leave', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['leave', node.kind, getValue(node)]);
               if (node.kind === 'Name' && node.value === 'x') {
                 return BREAK;
               }
@@ -883,10 +1108,12 @@ describe('Visitor', () => {
         visitInParallel([
           {
             enter(node) {
-              visited.push(['break-a', 'enter', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['break-a', 'enter', node.kind, getValue(node)]);
             },
             leave(node) {
-              visited.push(['break-a', 'leave', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['break-a', 'leave', node.kind, getValue(node)]);
               if (node.kind === 'Field' && node.name.value === 'a') {
                 return BREAK;
               }
@@ -894,10 +1121,12 @@ describe('Visitor', () => {
           },
           {
             enter(node) {
-              visited.push(['break-b', 'enter', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['break-b', 'enter', node.kind, getValue(node)]);
             },
             leave(node) {
-              visited.push(['break-b', 'leave', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['break-b', 'leave', node.kind, getValue(node)]);
               if (node.kind === 'Field' && node.name.value === 'b') {
                 return BREAK;
               }
@@ -950,11 +1179,12 @@ describe('Visitor', () => {
       const visited = [];
 
       const ast = parse('{ a, b, c { a, b, c } }', { noLocation: true });
-      const editedAst = visit(
+      const editedAST = visit(
         ast,
         visitInParallel([
           {
             enter(node) {
+              checkVisitorFnArgs(ast, arguments);
               if (node.kind === 'Field' && node.name.value === 'b') {
                 return null;
               }
@@ -962,10 +1192,12 @@ describe('Visitor', () => {
           },
           {
             enter(node) {
-              visited.push(['enter', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['enter', node.kind, getValue(node)]);
             },
             leave(node) {
-              visited.push(['leave', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments, /* isEdited */ true);
+              visited.push(['leave', node.kind, getValue(node)]);
             },
           },
         ]),
@@ -975,7 +1207,7 @@ describe('Visitor', () => {
         parse('{ a, b, c { a, b, c } }', { noLocation: true }),
       );
 
-      expect(editedAst).to.deep.equal(
+      expect(editedAST).to.deep.equal(
         parse('{ a,    c { a,    c } }', { noLocation: true }),
       );
 
@@ -1011,11 +1243,12 @@ describe('Visitor', () => {
       const visited = [];
 
       const ast = parse('{ a, b, c { a, b, c } }', { noLocation: true });
-      const editedAst = visit(
+      const editedAST = visit(
         ast,
         visitInParallel([
           {
             leave(node) {
+              checkVisitorFnArgs(ast, arguments, /* isEdited */ true);
               if (node.kind === 'Field' && node.name.value === 'b') {
                 return null;
               }
@@ -1023,10 +1256,12 @@ describe('Visitor', () => {
           },
           {
             enter(node) {
-              visited.push(['enter', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments);
+              visited.push(['enter', node.kind, getValue(node)]);
             },
             leave(node) {
-              visited.push(['leave', node.kind, node.value]);
+              checkVisitorFnArgs(ast, arguments, /* isEdited */ true);
+              visited.push(['leave', node.kind, getValue(node)]);
             },
           },
         ]),
@@ -1036,7 +1271,7 @@ describe('Visitor', () => {
         parse('{ a, b, c { a, b, c } }', { noLocation: true }),
       );
 
-      expect(editedAst).to.deep.equal(
+      expect(editedAST).to.deep.equal(
         parse('{ a,    c { a,    c } }', { noLocation: true }),
       );
 
@@ -1088,6 +1323,7 @@ describe('Visitor', () => {
         ast,
         visitWithTypeInfo(typeInfo, {
           enter(node) {
+            checkVisitorFnArgs(ast, arguments);
             const parentType = typeInfo.getParentType();
             const type = typeInfo.getType();
             const inputType = typeInfo.getInputType();
@@ -1101,6 +1337,7 @@ describe('Visitor', () => {
             ]);
           },
           leave(node) {
+            checkVisitorFnArgs(ast, arguments);
             const parentType = typeInfo.getParentType();
             const type = typeInfo.getType();
             const inputType = typeInfo.getInputType();
@@ -1165,10 +1402,11 @@ describe('Visitor', () => {
       const typeInfo = new TypeInfo(testSchema);
 
       const ast = parse('{ human(id: 4) { name, pets }, alien }');
-      const editedAst = visit(
+      const editedAST = visit(
         ast,
         visitWithTypeInfo(typeInfo, {
           enter(node) {
+            checkVisitorFnArgs(ast, arguments, /* isEdited */ true);
             const parentType = typeInfo.getParentType();
             const type = typeInfo.getType();
             const inputType = typeInfo.getInputType();
@@ -1206,6 +1444,7 @@ describe('Visitor', () => {
             }
           },
           leave(node) {
+            checkVisitorFnArgs(ast, arguments, /* isEdited */ true);
             const parentType = typeInfo.getParentType();
             const type = typeInfo.getType();
             const inputType = typeInfo.getInputType();
@@ -1225,7 +1464,7 @@ describe('Visitor', () => {
         print(parse('{ human(id: 4) { name, pets }, alien }')),
       );
 
-      expect(print(editedAst)).to.deep.equal(
+      expect(print(editedAST)).to.deep.equal(
         print(
           parse(
             '{ human(id: 4) { name, pets { __typename } }, alien { __typename } }',

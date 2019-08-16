@@ -1,33 +1,25 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import type { ValidationContext } from '../index';
-import { GraphQLError } from '../../error';
+import { GraphQLError } from '../../error/GraphQLError';
+
 import { print } from '../../language/printer';
+import { type ASTVisitor } from '../../language/visitor';
+
 import { isCompositeType } from '../../type/definition';
-import type { GraphQLType } from '../../type/definition';
+
 import { typeFromAST } from '../../utilities/typeFromAST';
 
-export function inlineFragmentOnNonCompositeErrorMessage(
-  type: GraphQLType,
-): string {
-  return `Fragment cannot condition on non composite type "${String(type)}".`;
+import { type ValidationContext } from '../ValidationContext';
+
+export function inlineFragmentOnNonCompositeErrorMessage(type: string): string {
+  return `Fragment cannot condition on non composite type "${type}".`;
 }
 
 export function fragmentOnNonCompositeErrorMessage(
   fragName: string,
-  type: GraphQLType,
+  type: string,
 ): string {
-  return (
-    `Fragment "${fragName}" cannot condition on non composite ` +
-    `type "${String(type)}".`
-  );
+  return `Fragment "${fragName}" cannot condition on non composite type "${type}".`;
 }
 
 /**
@@ -37,18 +29,19 @@ export function fragmentOnNonCompositeErrorMessage(
  * can only be spread into a composite type (object, interface, or union), the
  * type condition must also be a composite type.
  */
-export function FragmentsOnCompositeTypes(context: ValidationContext): any {
+export function FragmentsOnCompositeTypes(
+  context: ValidationContext,
+): ASTVisitor {
   return {
     InlineFragment(node) {
-      if (node.typeCondition) {
-        const type = typeFromAST(context.getSchema(), node.typeCondition);
+      const typeCondition = node.typeCondition;
+      if (typeCondition) {
+        const type = typeFromAST(context.getSchema(), typeCondition);
         if (type && !isCompositeType(type)) {
           context.reportError(
             new GraphQLError(
-              inlineFragmentOnNonCompositeErrorMessage(
-                print(node.typeCondition),
-              ),
-              [node.typeCondition],
+              inlineFragmentOnNonCompositeErrorMessage(print(typeCondition)),
+              typeCondition,
             ),
           );
         }
@@ -63,7 +56,7 @@ export function FragmentsOnCompositeTypes(context: ValidationContext): any {
               node.name.value,
               print(node.typeCondition),
             ),
-            [node.typeCondition],
+            node.typeCondition,
           ),
         );
       }

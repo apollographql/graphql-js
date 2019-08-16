@@ -1,25 +1,23 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// @flow strict
 
 import { expect } from 'chai';
 import { describe, it } from 'mocha';
 
-import { missingFieldArgMessage } from '../../validation/rules/ProvidedNonNullArguments';
-import {
-  graphqlSync,
-  GraphQLSchema,
-  GraphQLObjectType,
-  GraphQLList,
-  GraphQLInputObjectType,
-  GraphQLString,
-  GraphQLEnumType,
-} from '../../';
+import invariant from '../../jsutils/invariant';
 
+import { missingFieldArgMessage } from '../../validation/rules/ProvidedRequiredArguments';
+
+import { graphqlSync } from '../../graphql';
 import { getIntrospectionQuery } from '../../utilities/introspectionQuery';
+
+import { GraphQLSchema } from '../schema';
+import { GraphQLString } from '../scalars';
+import {
+  GraphQLList,
+  GraphQLObjectType,
+  GraphQLInputObjectType,
+  GraphQLEnumType,
+} from '../definition';
 
 describe('Introspection', () => {
   it('executes an introspection query', () => {
@@ -31,10 +29,10 @@ describe('Introspection', () => {
         },
       }),
     });
+    const query = getIntrospectionQuery({ descriptions: false });
+    const result = graphqlSync(EmptySchema, query);
 
-    return expect(
-      graphqlSync(EmptySchema, getIntrospectionQuery()),
-    ).to.containSubset({
+    expect(result).to.deep.equal({
       data: {
         __schema: {
           mutationType: null,
@@ -46,8 +44,30 @@ describe('Introspection', () => {
             {
               kind: 'OBJECT',
               name: 'QueryRoot',
+              fields: [
+                {
+                  name: 'onlyField',
+                  args: [],
+                  type: {
+                    kind: 'SCALAR',
+                    name: 'String',
+                    ofType: null,
+                  },
+                  isDeprecated: false,
+                  deprecationReason: null,
+                },
+              ],
               inputFields: null,
               interfaces: [],
+              enumValues: null,
+              possibleTypes: null,
+            },
+            {
+              kind: 'SCALAR',
+              name: 'String',
+              fields: null,
+              inputFields: null,
+              interfaces: null,
               enumValues: null,
               possibleTypes: null,
             },
@@ -70,6 +90,7 @@ describe('Introspection', () => {
                         ofType: {
                           kind: 'OBJECT',
                           name: '__Type',
+                          ofType: null,
                         },
                       },
                     },
@@ -129,6 +150,7 @@ describe('Introspection', () => {
                         ofType: {
                           kind: 'OBJECT',
                           name: '__Directive',
+                          ofType: null,
                         },
                       },
                     },
@@ -367,15 +389,6 @@ describe('Introspection', () => {
             },
             {
               kind: 'SCALAR',
-              name: 'String',
-              fields: null,
-              inputFields: null,
-              interfaces: null,
-              enumValues: null,
-              possibleTypes: null,
-            },
-            {
-              kind: 'SCALAR',
               name: 'Boolean',
               fields: null,
               inputFields: null,
@@ -428,6 +441,7 @@ describe('Introspection', () => {
                         ofType: {
                           kind: 'OBJECT',
                           name: '__InputValue',
+                          ofType: null,
                         },
                       },
                     },
@@ -651,6 +665,7 @@ describe('Introspection', () => {
                         ofType: {
                           kind: 'ENUM',
                           name: '__DirectiveLocation',
+                          ofType: null,
                         },
                       },
                     },
@@ -673,57 +688,13 @@ describe('Introspection', () => {
                         ofType: {
                           kind: 'OBJECT',
                           name: '__InputValue',
+                          ofType: null,
                         },
                       },
                     },
                   },
                   isDeprecated: false,
                   deprecationReason: null,
-                },
-                {
-                  name: 'onOperation',
-                  args: [],
-                  type: {
-                    kind: 'NON_NULL',
-                    name: null,
-                    ofType: {
-                      kind: 'SCALAR',
-                      name: 'Boolean',
-                      ofType: null,
-                    },
-                  },
-                  isDeprecated: true,
-                  deprecationReason: 'Use `locations`.',
-                },
-                {
-                  name: 'onFragment',
-                  args: [],
-                  type: {
-                    kind: 'NON_NULL',
-                    name: null,
-                    ofType: {
-                      kind: 'SCALAR',
-                      name: 'Boolean',
-                      ofType: null,
-                    },
-                  },
-                  isDeprecated: true,
-                  deprecationReason: 'Use `locations`.',
-                },
-                {
-                  name: 'onField',
-                  args: [],
-                  type: {
-                    kind: 'NON_NULL',
-                    name: null,
-                    ofType: {
-                      kind: 'SCALAR',
-                      name: 'Boolean',
-                      ofType: null,
-                    },
-                  },
-                  isDeprecated: true,
-                  deprecationReason: 'Use `locations`.',
                 },
               ],
               inputFields: null,
@@ -741,30 +712,97 @@ describe('Introspection', () => {
                 {
                   name: 'QUERY',
                   isDeprecated: false,
+                  deprecationReason: null,
                 },
                 {
                   name: 'MUTATION',
                   isDeprecated: false,
+                  deprecationReason: null,
                 },
                 {
                   name: 'SUBSCRIPTION',
                   isDeprecated: false,
+                  deprecationReason: null,
                 },
                 {
                   name: 'FIELD',
                   isDeprecated: false,
+                  deprecationReason: null,
                 },
                 {
                   name: 'FRAGMENT_DEFINITION',
                   isDeprecated: false,
+                  deprecationReason: null,
                 },
                 {
                   name: 'FRAGMENT_SPREAD',
                   isDeprecated: false,
+                  deprecationReason: null,
                 },
                 {
                   name: 'INLINE_FRAGMENT',
                   isDeprecated: false,
+                  deprecationReason: null,
+                },
+                {
+                  name: 'VARIABLE_DEFINITION',
+                  isDeprecated: false,
+                  deprecationReason: null,
+                },
+                {
+                  name: 'SCHEMA',
+                  isDeprecated: false,
+                  deprecationReason: null,
+                },
+                {
+                  name: 'SCALAR',
+                  isDeprecated: false,
+                  deprecationReason: null,
+                },
+                {
+                  name: 'OBJECT',
+                  isDeprecated: false,
+                  deprecationReason: null,
+                },
+                {
+                  name: 'FIELD_DEFINITION',
+                  isDeprecated: false,
+                  deprecationReason: null,
+                },
+                {
+                  name: 'ARGUMENT_DEFINITION',
+                  isDeprecated: false,
+                  deprecationReason: null,
+                },
+                {
+                  name: 'INTERFACE',
+                  isDeprecated: false,
+                  deprecationReason: null,
+                },
+                {
+                  name: 'UNION',
+                  isDeprecated: false,
+                  deprecationReason: null,
+                },
+                {
+                  name: 'ENUM',
+                  isDeprecated: false,
+                  deprecationReason: null,
+                },
+                {
+                  name: 'ENUM_VALUE',
+                  isDeprecated: false,
+                  deprecationReason: null,
+                },
+                {
+                  name: 'INPUT_OBJECT',
+                  isDeprecated: false,
+                  deprecationReason: null,
+                },
+                {
+                  name: 'INPUT_FIELD_DEFINITION',
+                  isDeprecated: false,
+                  deprecationReason: null,
                 },
               ],
               possibleTypes: null,
@@ -809,6 +847,21 @@ describe('Introspection', () => {
                 },
               ],
             },
+            {
+              name: 'deprecated',
+              locations: ['FIELD_DEFINITION', 'ENUM_VALUE'],
+              args: [
+                {
+                  defaultValue: '"No longer supported"',
+                  name: 'reason',
+                  type: {
+                    kind: 'SCALAR',
+                    name: 'String',
+                    ofType: null,
+                  },
+                },
+              ],
+            },
           ],
         },
       },
@@ -819,8 +872,8 @@ describe('Introspection', () => {
     const TestInputObject = new GraphQLInputObjectType({
       name: 'TestInputObject',
       fields: {
-        a: { type: GraphQLString, defaultValue: 'foo' },
-        b: { type: new GraphQLList(GraphQLString) },
+        a: { type: GraphQLString, defaultValue: 'tes\t de\fault' },
+        b: { type: GraphQLList(GraphQLString) },
         c: { type: GraphQLString, defaultValue: null },
       },
     });
@@ -831,7 +884,6 @@ describe('Introspection', () => {
         field: {
           type: GraphQLString,
           args: { complex: { type: TestInputObject } },
-          resolve: (_, { complex }) => JSON.stringify(complex),
         },
       },
     });
@@ -839,15 +891,13 @@ describe('Introspection', () => {
     const schema = new GraphQLSchema({ query: TestType });
     const request = `
       {
-        __schema {
-          types {
-            kind
+        __type(name: "TestInputObject") {
+          kind
+          name
+          inputFields {
             name
-            inputFields {
-              name
-              type { ...TypeRef }
-              defaultValue
-            }
+            type { ...TypeRef }
+            defaultValue
           }
         }
       }
@@ -870,46 +920,42 @@ describe('Introspection', () => {
       }
     `;
 
-    return expect(graphqlSync(schema, request)).to.containSubset({
+    expect(graphqlSync(schema, request)).to.deep.equal({
       data: {
-        __schema: {
-          types: [
+        __type: {
+          kind: 'INPUT_OBJECT',
+          name: 'TestInputObject',
+          inputFields: [
             {
-              kind: 'INPUT_OBJECT',
-              name: 'TestInputObject',
-              inputFields: [
-                {
-                  name: 'a',
-                  type: {
-                    kind: 'SCALAR',
-                    name: 'String',
-                    ofType: null,
-                  },
-                  defaultValue: '"foo"',
+              name: 'a',
+              type: {
+                kind: 'SCALAR',
+                name: 'String',
+                ofType: null,
+              },
+              defaultValue: '"tes\\t de\\fault"',
+            },
+            {
+              name: 'b',
+              type: {
+                kind: 'LIST',
+                name: null,
+                ofType: {
+                  kind: 'SCALAR',
+                  name: 'String',
+                  ofType: null,
                 },
-                {
-                  name: 'b',
-                  type: {
-                    kind: 'LIST',
-                    name: null,
-                    ofType: {
-                      kind: 'SCALAR',
-                      name: 'String',
-                      ofType: null,
-                    },
-                  },
-                  defaultValue: null,
-                },
-                {
-                  name: 'c',
-                  type: {
-                    kind: 'SCALAR',
-                    name: 'String',
-                    ofType: null,
-                  },
-                  defaultValue: 'null',
-                },
-              ],
+              },
+              defaultValue: null,
+            },
+            {
+              name: 'c',
+              type: {
+                kind: 'SCALAR',
+                name: 'String',
+                ofType: null,
+              },
+              defaultValue: 'null',
             },
           ],
         },
@@ -936,7 +982,7 @@ describe('Introspection', () => {
       }
     `;
 
-    return expect(graphqlSync(schema, request)).to.deep.equal({
+    expect(graphqlSync(schema, request)).to.deep.equal({
       data: {
         __type: {
           name: 'TestType',
@@ -973,7 +1019,7 @@ describe('Introspection', () => {
       }
     `;
 
-    return expect(graphqlSync(schema, request)).to.deep.equal({
+    expect(graphqlSync(schema, request)).to.deep.equal({
       data: {
         __type: {
           name: 'TestType',
@@ -1026,7 +1072,7 @@ describe('Introspection', () => {
       }
     `;
 
-    return expect(graphqlSync(schema, request)).to.deep.equal({
+    expect(graphqlSync(schema, request)).to.deep.equal({
       data: {
         __type: {
           name: 'TestType',
@@ -1086,7 +1132,7 @@ describe('Introspection', () => {
       }
     `;
 
-    return expect(graphqlSync(schema, request)).to.deep.equal({
+    expect(graphqlSync(schema, request)).to.deep.equal({
       data: {
         __type: {
           name: 'TestEnum',
@@ -1149,7 +1195,7 @@ describe('Introspection', () => {
       }
     `;
 
-    return expect(graphqlSync(schema, request)).to.deep.equal({
+    expect(graphqlSync(schema, request)).to.deep.equal({
       data: {
         __type: {
           name: 'TestEnum',
@@ -1204,7 +1250,7 @@ describe('Introspection', () => {
       }
     `;
 
-    return expect(graphqlSync(schema, request)).to.containSubset({
+    expect(graphqlSync(schema, request)).to.deep.equal({
       errors: [
         {
           message: missingFieldArgMessage('__type', 'name', 'String!'),
@@ -1236,16 +1282,12 @@ describe('Introspection', () => {
       }
     `;
 
-    return expect(graphqlSync(schema, request)).to.deep.equal({
+    expect(graphqlSync(schema, request)).to.deep.equal({
       data: {
         schemaType: {
           name: '__Schema',
           description:
-            'A GraphQL Schema defines the capabilities of a ' +
-            'GraphQL server. It exposes all available types and ' +
-            'directives on the server, as well as the entry ' +
-            'points for query, mutation, ' +
-            'and subscription operations.',
+            'A GraphQL Schema defines the capabilities of a GraphQL server. It exposes all available types and directives on the server, as well as the entry points for query, mutation, and subscription operations.',
           fields: [
             {
               name: 'types',
@@ -1258,14 +1300,12 @@ describe('Introspection', () => {
             {
               name: 'mutationType',
               description:
-                'If this server supports mutation, the type that ' +
-                'mutation operations will be rooted at.',
+                'If this server supports mutation, the type that mutation operations will be rooted at.',
             },
             {
               name: 'subscriptionType',
               description:
-                'If this server support subscription, the type ' +
-                'that subscription operations will be rooted at.',
+                'If this server support subscription, the type that subscription operations will be rooted at.',
             },
             {
               name: 'directives',
@@ -1299,7 +1339,7 @@ describe('Introspection', () => {
       }
     `;
 
-    return expect(graphqlSync(schema, request)).to.deep.equal({
+    expect(graphqlSync(schema, request)).to.deep.equal({
       data: {
         typeKindType: {
           name: '__TypeKind',
@@ -1312,49 +1352,60 @@ describe('Introspection', () => {
             },
             {
               description:
-                'Indicates this type is an object. ' +
-                '`fields` and `interfaces` are valid fields.',
+                'Indicates this type is an object. `fields` and `interfaces` are valid fields.',
               name: 'OBJECT',
             },
             {
               description:
-                'Indicates this type is an interface. ' +
-                '`fields` and `possibleTypes` are valid fields.',
+                'Indicates this type is an interface. `fields` and `possibleTypes` are valid fields.',
               name: 'INTERFACE',
             },
             {
               description:
-                'Indicates this type is a union. ' +
-                '`possibleTypes` is a valid field.',
+                'Indicates this type is a union. `possibleTypes` is a valid field.',
               name: 'UNION',
             },
             {
               description:
-                'Indicates this type is an enum. ' +
-                '`enumValues` is a valid field.',
+                'Indicates this type is an enum. `enumValues` is a valid field.',
               name: 'ENUM',
             },
             {
               description:
-                'Indicates this type is an input object. ' +
-                '`inputFields` is a valid field.',
+                'Indicates this type is an input object. `inputFields` is a valid field.',
               name: 'INPUT_OBJECT',
             },
             {
               description:
-                'Indicates this type is a list. ' +
-                '`ofType` is a valid field.',
+                'Indicates this type is a list. `ofType` is a valid field.',
               name: 'LIST',
             },
             {
               description:
-                'Indicates this type is a non-null. ' +
-                '`ofType` is a valid field.',
+                'Indicates this type is a non-null. `ofType` is a valid field.',
               name: 'NON_NULL',
             },
           ],
         },
       },
     });
+  });
+
+  it('executes an introspection query without calling global fieldResolver', () => {
+    const QueryRoot = new GraphQLObjectType({
+      name: 'QueryRoot',
+      fields: {
+        onlyField: { type: GraphQLString },
+      },
+    });
+
+    const schema = new GraphQLSchema({ query: QueryRoot });
+    const source = getIntrospectionQuery();
+
+    function fieldResolver(_1, _2, _3, info) {
+      invariant(false, `Called on ${info.parentType.name}::${info.fieldName}`);
+    }
+
+    graphqlSync({ schema, source, fieldResolver });
   });
 });

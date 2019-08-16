@@ -1,14 +1,9 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import type { ValidationContext } from '../index';
-import { GraphQLError } from '../../error';
+import { GraphQLError } from '../../error/GraphQLError';
+import { type ASTVisitor } from '../../language/visitor';
+
+import { type ASTValidationContext } from '../ValidationContext';
 
 export function duplicateFragmentNameMessage(fragName: string): string {
   return `There can be only one fragment named "${fragName}".`;
@@ -19,7 +14,7 @@ export function duplicateFragmentNameMessage(fragName: string): string {
  *
  * A GraphQL document is only valid if all defined fragments have unique names.
  */
-export function UniqueFragmentNames(context: ValidationContext): any {
+export function UniqueFragmentNames(context: ASTValidationContext): ASTVisitor {
   const knownFragmentNames = Object.create(null);
   return {
     OperationDefinition: () => false,

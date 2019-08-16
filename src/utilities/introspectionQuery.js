@@ -1,13 +1,6 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import type { DirectiveLocationEnum } from '../language/directiveLocation';
+import { type DirectiveLocationEnum } from '../language/directiveLocation';
 
 export type IntrospectionOptions = {|
   // Whether to include descriptions in the introspection result.
@@ -112,6 +105,11 @@ export function getIntrospectionQuery(options?: IntrospectionOptions): string {
   `;
 }
 
+/**
+ * Deprecated, call getIntrospectionQuery directly.
+ *
+ * This function will be removed in v15
+ */
 export const introspectionQuery = getIntrospectionQuery();
 
 export type IntrospectionQuery = {|
@@ -150,6 +148,7 @@ export type IntrospectionScalarType = {
   +kind: 'SCALAR',
   +name: string,
   +description?: ?string,
+  ...
 };
 
 export type IntrospectionObjectType = {
@@ -160,6 +159,7 @@ export type IntrospectionObjectType = {
   +interfaces: $ReadOnlyArray<
     IntrospectionNamedTypeRef<IntrospectionInterfaceType>,
   >,
+  ...
 };
 
 export type IntrospectionInterfaceType = {
@@ -170,6 +170,7 @@ export type IntrospectionInterfaceType = {
   +possibleTypes: $ReadOnlyArray<
     IntrospectionNamedTypeRef<IntrospectionObjectType>,
   >,
+  ...
 };
 
 export type IntrospectionUnionType = {
@@ -179,6 +180,7 @@ export type IntrospectionUnionType = {
   +possibleTypes: $ReadOnlyArray<
     IntrospectionNamedTypeRef<IntrospectionObjectType>,
   >,
+  ...
 };
 
 export type IntrospectionEnumType = {
@@ -186,6 +188,7 @@ export type IntrospectionEnumType = {
   +name: string,
   +description?: ?string,
   +enumValues: $ReadOnlyArray<IntrospectionEnumValue>,
+  ...
 };
 
 export type IntrospectionInputObjectType = {
@@ -193,6 +196,7 @@ export type IntrospectionInputObjectType = {
   +name: string,
   +description?: ?string,
   +inputFields: $ReadOnlyArray<IntrospectionInputValue>,
+  ...
 };
 
 export type IntrospectionListTypeRef<
@@ -200,6 +204,7 @@ export type IntrospectionListTypeRef<
 > = {
   +kind: 'LIST',
   +ofType: T,
+  ...
 };
 
 export type IntrospectionNonNullTypeRef<
@@ -207,6 +212,7 @@ export type IntrospectionNonNullTypeRef<
 > = {
   +kind: 'NON_NULL',
   +ofType: T,
+  ...
 };
 
 export type IntrospectionTypeRef =
@@ -238,6 +244,7 @@ export type IntrospectionNamedTypeRef<
 > = {
   +kind: $PropertyType<T, 'kind'>,
   +name: string,
+  ...
 };
 
 export type IntrospectionField = {|

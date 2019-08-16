@@ -1,11 +1,4 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
 /**
  * This defines a basic set of data for our Star Wars Schema.
@@ -98,25 +91,26 @@ export type Character = {
   name: string,
   friends: Array<string>,
   appearsIn: Array<number>,
+  ...
 };
 
-export type Human = {
+export type Human = {|
   type: 'Human',
   id: string,
   name: string,
   friends: Array<string>,
   appearsIn: Array<number>,
   homePlanet: string,
-};
+|};
 
-export type Droid = {
+export type Droid = {|
   type: 'Droid',
   id: string,
   name: string,
   friends: Array<string>,
   appearsIn: Array<number>,
   primaryFunction: string,
-};
+|};
 
 /**
  * Helper function to get a character by ID.

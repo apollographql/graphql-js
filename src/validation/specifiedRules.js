@@ -1,11 +1,4 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
 // Spec Section: "Executable Definitions"
 import { ExecutableDefinitions } from './rules/ExecutableDefinitions';
@@ -65,19 +58,22 @@ import { KnownDirectives } from './rules/KnownDirectives';
 import { UniqueDirectivesPerLocation } from './rules/UniqueDirectivesPerLocation';
 
 // Spec Section: "Argument Names"
-import { KnownArgumentNames } from './rules/KnownArgumentNames';
+import {
+  KnownArgumentNames,
+  KnownArgumentNamesOnDirectives, // @internal
+} from './rules/KnownArgumentNames';
 
 // Spec Section: "Argument Uniqueness"
 import { UniqueArgumentNames } from './rules/UniqueArgumentNames';
 
-// Spec Section: "Argument Values Type Correctness"
-import { ArgumentsOfCorrectType } from './rules/ArgumentsOfCorrectType';
+// Spec Section: "Value Type Correctness"
+import { ValuesOfCorrectType } from './rules/ValuesOfCorrectType';
 
 // Spec Section: "Argument Optionality"
-import { ProvidedNonNullArguments } from './rules/ProvidedNonNullArguments';
-
-// Spec Section: "Variable Default Values Are Correctly Typed"
-import { DefaultValuesOfCorrectType } from './rules/DefaultValuesOfCorrectType';
+import {
+  ProvidedRequiredArguments,
+  ProvidedRequiredArgumentsOnDirectives, // @internal
+} from './rules/ProvidedRequiredArguments';
 
 // Spec Section: "All Variable Usages Are Allowed"
 import { VariablesInAllowedPosition } from './rules/VariablesInAllowedPosition';
@@ -88,15 +84,13 @@ import { OverlappingFieldsCanBeMerged } from './rules/OverlappingFieldsCanBeMerg
 // Spec Section: "Input Object Field Uniqueness"
 import { UniqueInputFieldNames } from './rules/UniqueInputFieldNames';
 
-import type { ValidationContext } from './index';
-
 /**
  * This set includes all validation rules defined by the GraphQL spec.
  *
  * The order of the rules in this list has been adjusted to lead to the
  * most clear output when encountering multiple validation errors.
  */
-export const specifiedRules: Array<(context: ValidationContext) => any> = [
+export const specifiedRules = Object.freeze([
   ExecutableDefinitions,
   UniqueOperationNames,
   LoneAnonymousOperation,
@@ -118,10 +112,35 @@ export const specifiedRules: Array<(context: ValidationContext) => any> = [
   UniqueDirectivesPerLocation,
   KnownArgumentNames,
   UniqueArgumentNames,
-  ArgumentsOfCorrectType,
-  ProvidedNonNullArguments,
-  DefaultValuesOfCorrectType,
+  ValuesOfCorrectType,
+  ProvidedRequiredArguments,
   VariablesInAllowedPosition,
   OverlappingFieldsCanBeMerged,
   UniqueInputFieldNames,
-];
+]);
+
+import { LoneSchemaDefinition } from './rules/LoneSchemaDefinition';
+import { UniqueOperationTypes } from './rules/UniqueOperationTypes';
+import { UniqueTypeNames } from './rules/UniqueTypeNames';
+import { UniqueEnumValueNames } from './rules/UniqueEnumValueNames';
+import { UniqueFieldDefinitionNames } from './rules/UniqueFieldDefinitionNames';
+import { UniqueDirectiveNames } from './rules/UniqueDirectiveNames';
+import { PossibleTypeExtensions } from './rules/PossibleTypeExtensions';
+
+// @internal
+export const specifiedSDLRules = Object.freeze([
+  LoneSchemaDefinition,
+  UniqueOperationTypes,
+  UniqueTypeNames,
+  UniqueEnumValueNames,
+  UniqueFieldDefinitionNames,
+  UniqueDirectiveNames,
+  KnownTypeNames,
+  KnownDirectives,
+  UniqueDirectivesPerLocation,
+  PossibleTypeExtensions,
+  KnownArgumentNamesOnDirectives,
+  UniqueArgumentNames,
+  UniqueInputFieldNames,
+  ProvidedRequiredArgumentsOnDirectives,
+]);

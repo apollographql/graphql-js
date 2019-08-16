@@ -1,53 +1,49 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// @flow strict
 
-// 80+ char lines are useful in describe/it, so ignore in this file.
-/* eslint-disable max-len */
-
-import { describe, it } from 'mocha';
 import { expect } from 'chai';
+import { describe, it } from 'mocha';
+
+import inspect from '../../jsutils/inspect';
+
+import { parse } from '../../language/parser';
+
+import { GraphQLSchema } from '../../type/schema';
+import { GraphQLString } from '../../type/scalars';
 import {
-  GraphQLSchema,
+  type GraphQLNamedType,
+  type GraphQLInputType,
+  type GraphQLOutputType,
+  GraphQLList,
+  GraphQLNonNull,
   GraphQLScalarType,
   GraphQLObjectType,
   GraphQLInterfaceType,
   GraphQLUnionType,
   GraphQLEnumType,
   GraphQLInputObjectType,
-  GraphQLList,
-  GraphQLNonNull,
-  GraphQLString,
-} from '../../';
+} from '../../type/definition';
 
-const SomeScalarType = new GraphQLScalarType({
-  name: 'SomeScalar',
-  serialize() {},
-  parseValue() {},
-  parseLiteral() {},
+import { extendSchema } from '../../utilities/extendSchema';
+import { buildSchema } from '../../utilities/buildASTSchema';
+
+import { validateSchema } from '../validate';
+
+const SomeScalarType = new GraphQLScalarType({ name: 'SomeScalar' });
+
+const SomeInterfaceType = new GraphQLInterfaceType({
+  name: 'SomeInterface',
+  fields: () => ({ f: { type: SomeObjectType } }),
 });
 
 const SomeObjectType = new GraphQLObjectType({
   name: 'SomeObject',
-  fields: { f: { type: GraphQLString } },
-});
-
-const ObjectWithIsTypeOf = new GraphQLObjectType({
-  name: 'ObjectWithIsTypeOf',
-  fields: { f: { type: GraphQLString } },
+  fields: () => ({ f: { type: SomeObjectType } }),
+  interfaces: [SomeInterfaceType],
 });
 
 const SomeUnionType = new GraphQLUnionType({
   name: 'SomeUnion',
   types: [SomeObjectType],
-});
-
-const SomeInterfaceType = new GraphQLInterfaceType({
-  name: 'SomeInterface',
-  fields: { f: { type: GraphQLString } },
 });
 
 const SomeEnumType = new GraphQLEnumType({
@@ -64,11 +60,15 @@ const SomeInputObjectType = new GraphQLInputObjectType({
   },
 });
 
-function withModifiers(types) {
-  return types
-    .concat(types.map(type => new GraphQLList(type)))
-    .concat(types.map(type => new GraphQLNonNull(type)))
-    .concat(types.map(type => new GraphQLNonNull(new GraphQLList(type))));
+function withModifiers<T: GraphQLNamedType>(
+  types: Array<T>,
+): Array<T | GraphQLList<T> | GraphQLNonNull<T | GraphQLList<T>>> {
+  return [
+    ...types,
+    ...types.map(type => GraphQLList(type)),
+    ...types.map(type => GraphQLNonNull(type)),
+    ...types.map(type => GraphQLNonNull(GraphQLList(type))),
+  ];
 }
 
 const outputTypes = withModifiers([
@@ -80,7 +80,7 @@ const outputTypes = withModifiers([
   SomeInterfaceType,
 ]);
 
-const notOutputTypes = withModifiers([SomeInputObjectType]).concat(String);
+const notOutputTypes = withModifiers([SomeInputObjectType]);
 
 const inputTypes = withModifiers([
   GraphQLString,
@@ -93,7 +93,7 @@ const notInputTypes = withModifiers([
   SomeObjectType,
   SomeUnionType,
   SomeInterfaceType,
-]).concat(String);
+]);
 
 function schemaWithFieldType(type) {
   return new GraphQLSchema({
@@ -107,1165 +107,862 @@ function schemaWithFieldType(type) {
 
 describe('Type System: A Schema must have Object root types', () => {
   it('accepts a Schema whose query type is an object type', () => {
-    expect(
-      () =>
-        new GraphQLSchema({
-          query: SomeObjectType,
-        }),
-    ).not.to.throw();
+    const schema = buildSchema(`
+      type Query {
+        test: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([]);
+
+    const schemaWithDef = buildSchema(`
+      schema {
+        query: QueryRoot
+      }
+
+      type QueryRoot {
+        test: String
+      }
+    `);
+    expect(validateSchema(schemaWithDef)).to.deep.equal([]);
   });
 
   it('accepts a Schema whose query and mutation types are object types', () => {
-    expect(() => {
-      const MutationType = new GraphQLObjectType({
-        name: 'Mutation',
-        fields: { edit: { type: GraphQLString } },
-      });
+    const schema = buildSchema(`
+      type Query {
+        test: String
+      }
 
-      return new GraphQLSchema({
-        query: SomeObjectType,
-        mutation: MutationType,
-      });
-    }).not.to.throw();
+      type Mutation {
+        test: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([]);
+
+    const schemaWithDef = buildSchema(`
+      schema {
+        query: QueryRoot
+        mutation: MutationRoot
+      }
+
+      type QueryRoot {
+        test: String
+      }
+
+      type MutationRoot {
+        test: String
+      }
+    `);
+    expect(validateSchema(schemaWithDef)).to.deep.equal([]);
   });
 
   it('accepts a Schema whose query and subscription types are object types', () => {
-    expect(() => {
-      const SubscriptionType = new GraphQLObjectType({
-        name: 'Subscription',
-        fields: { subscribe: { type: GraphQLString } },
-      });
+    const schema = buildSchema(`
+      type Query {
+        test: String
+      }
 
-      return new GraphQLSchema({
-        query: SomeObjectType,
-        subscription: SubscriptionType,
-      });
-    }).not.to.throw();
+      type Subscription {
+        test: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([]);
+
+    const schemaWithDef = buildSchema(`
+      schema {
+        query: QueryRoot
+        subscription: SubscriptionRoot
+      }
+
+      type QueryRoot {
+        test: String
+      }
+
+      type SubscriptionRoot {
+        test: String
+      }
+    `);
+    expect(validateSchema(schemaWithDef)).to.deep.equal([]);
   });
 
   it('rejects a Schema without a query type', () => {
-    expect(() => new GraphQLSchema({})).to.throw(
-      'Schema query must be Object Type but got: undefined.',
-    );
+    const schema = buildSchema(`
+      type Mutation {
+        test: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message: 'Query root type must be provided.',
+      },
+    ]);
+
+    const schemaWithDef = buildSchema(`
+      schema {
+        mutation: MutationRoot
+      }
+
+      type MutationRoot {
+        test: String
+      }
+    `);
+    expect(validateSchema(schemaWithDef)).to.deep.equal([
+      {
+        message: 'Query root type must be provided.',
+        locations: [{ line: 2, column: 7 }],
+      },
+    ]);
   });
 
-  it('rejects a Schema whose query type is an input type', () => {
-    expect(() => new GraphQLSchema({ query: SomeInputObjectType })).to.throw(
-      'Schema query must be Object Type but got: SomeInputObject.',
-    );
+  it('rejects a Schema whose query root type is not an Object type', () => {
+    const schema = buildSchema(`
+      input Query {
+        test: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message: 'Query root type must be Object type, it cannot be Query.',
+        locations: [{ line: 2, column: 7 }],
+      },
+    ]);
+
+    const schemaWithDef = buildSchema(`
+      schema {
+        query: SomeInputObject
+      }
+
+      input SomeInputObject {
+        test: String
+      }
+    `);
+    expect(validateSchema(schemaWithDef)).to.deep.equal([
+      {
+        message:
+          'Query root type must be Object type, it cannot be SomeInputObject.',
+        locations: [{ line: 3, column: 16 }],
+      },
+    ]);
   });
 
   it('rejects a Schema whose mutation type is an input type', () => {
-    expect(
-      () =>
-        new GraphQLSchema({
-          query: SomeObjectType,
-          mutation: SomeInputObjectType,
-        }),
-    ).to.throw(
-      'Schema mutation must be Object Type if provided but got: SomeInputObject.',
-    );
+    const schema = buildSchema(`
+      type Query {
+        field: String
+      }
+
+      input Mutation {
+        test: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Mutation root type must be Object type if provided, it cannot be Mutation.',
+        locations: [{ line: 6, column: 7 }],
+      },
+    ]);
+
+    const schemaWithDef = buildSchema(`
+      schema {
+        query: Query
+        mutation: SomeInputObject
+      }
+
+      type Query {
+        field: String
+      }
+
+      input SomeInputObject {
+        test: String
+      }
+    `);
+    expect(validateSchema(schemaWithDef)).to.deep.equal([
+      {
+        message:
+          'Mutation root type must be Object type if provided, it cannot be SomeInputObject.',
+        locations: [{ line: 4, column: 19 }],
+      },
+    ]);
   });
 
   it('rejects a Schema whose subscription type is an input type', () => {
-    expect(
-      () =>
-        new GraphQLSchema({
-          query: SomeObjectType,
-          subscription: SomeInputObjectType,
-        }),
-    ).to.throw(
-      'Schema subscription must be Object Type if provided but got: SomeInputObject.',
+    const schema = buildSchema(`
+      type Query {
+        field: String
+      }
+
+      input Subscription {
+        test: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Subscription root type must be Object type if provided, it cannot be Subscription.',
+        locations: [{ line: 6, column: 7 }],
+      },
+    ]);
+
+    const schemaWithDef = buildSchema(`
+      schema {
+        query: Query
+        subscription: SomeInputObject
+      }
+
+      type Query {
+        field: String
+      }
+
+      input SomeInputObject {
+        test: String
+      }
+    `);
+    expect(validateSchema(schemaWithDef)).to.deep.equal([
+      {
+        message:
+          'Subscription root type must be Object type if provided, it cannot be SomeInputObject.',
+        locations: [{ line: 4, column: 23 }],
+      },
+    ]);
+  });
+
+  it('rejects a schema extended with invalid root types', () => {
+    let schema = buildSchema(`
+      input SomeInputObject {
+        test: String
+      }
+    `);
+
+    schema = extendSchema(
+      schema,
+      parse(`
+        extend schema {
+          query: SomeInputObject
+        }
+      `),
     );
+
+    schema = extendSchema(
+      schema,
+      parse(`
+        extend schema {
+          mutation: SomeInputObject
+        }
+      `),
+    );
+
+    schema = extendSchema(
+      schema,
+      parse(`
+        extend schema {
+          subscription: SomeInputObject
+        }
+      `),
+    );
+
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Query root type must be Object type, it cannot be SomeInputObject.',
+        locations: [{ line: 3, column: 18 }],
+      },
+      {
+        message:
+          'Mutation root type must be Object type if provided, it cannot be SomeInputObject.',
+        locations: [{ line: 3, column: 21 }],
+      },
+      {
+        message:
+          'Subscription root type must be Object type if provided, it cannot be SomeInputObject.',
+        locations: [{ line: 3, column: 25 }],
+      },
+    ]);
   });
 
   it('rejects a Schema whose directives are incorrectly typed', () => {
-    expect(
-      () =>
-        new GraphQLSchema({
-          query: SomeObjectType,
-          directives: ['somedirective'],
-        }),
-    ).to.throw(
-      'Schema directives must be Array<GraphQLDirective> if provided but got: somedirective.',
-    );
-  });
-});
-
-describe('Type System: A Schema must contain uniquely named types', () => {
-  it('rejects a Schema which redefines a built-in type', () => {
-    expect(() => {
-      const FakeString = new GraphQLScalarType({
-        name: 'String',
-        serialize: () => null,
-      });
-
-      const QueryType = new GraphQLObjectType({
-        name: 'Query',
-        fields: {
-          normal: { type: GraphQLString },
-          fake: { type: FakeString },
-        },
-      });
-
-      return new GraphQLSchema({ query: QueryType });
-    }).to.throw(
-      'Schema must contain unique named types but contains multiple types ' +
-        'named "String".',
-    );
-  });
-
-  it('rejects a Schema which defines an object type twice', () => {
-    expect(() => {
-      const A = new GraphQLObjectType({
-        name: 'SameName',
-        fields: { f: { type: GraphQLString } },
-      });
-
-      const B = new GraphQLObjectType({
-        name: 'SameName',
-        fields: { f: { type: GraphQLString } },
-      });
-
-      const QueryType = new GraphQLObjectType({
-        name: 'Query',
-        fields: {
-          a: { type: A },
-          b: { type: B },
-        },
-      });
-
-      return new GraphQLSchema({ query: QueryType });
-    }).to.throw(
-      'Schema must contain unique named types but contains multiple types ' +
-        'named "SameName".',
-    );
-  });
-
-  it('rejects a Schema which have same named objects implementing an interface', () => {
-    expect(() => {
-      const AnotherInterface = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: { f: { type: GraphQLString } },
-      });
-
-      const FirstBadObject = new GraphQLObjectType({
-        name: 'BadObject',
-        interfaces: [AnotherInterface],
-        fields: { f: { type: GraphQLString } },
-      });
-
-      const SecondBadObject = new GraphQLObjectType({
-        name: 'BadObject',
-        interfaces: [AnotherInterface],
-        fields: { f: { type: GraphQLString } },
-      });
-
-      const QueryType = new GraphQLObjectType({
-        name: 'Query',
-        fields: {
-          iface: { type: AnotherInterface },
-        },
-      });
-
-      return new GraphQLSchema({
-        query: QueryType,
-        types: [FirstBadObject, SecondBadObject],
-      });
-    }).to.throw(
-      'Schema must contain unique named types but contains multiple types ' +
-        'named "BadObject".',
-    );
+    const schema = new GraphQLSchema({
+      query: SomeObjectType,
+      // $DisableFlowOnNegativeTest
+      directives: ['somedirective'],
+    });
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message: 'Expected directive but got: "somedirective".',
+      },
+    ]);
   });
 });
 
 describe('Type System: Objects must have fields', () => {
   it('accepts an Object type with fields object', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          fields: {
-            f: { type: GraphQLString },
-          },
-        }),
-      ),
-    ).not.to.throw();
-  });
+    const schema = buildSchema(`
+      type Query {
+        field: SomeObject
+      }
 
-  it('accepts an Object type with a field function', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          fields() {
-            return {
-              f: { type: GraphQLString },
-            };
-          },
-        }),
-      ),
-    ).not.to.throw();
+      type SomeObject {
+        field: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([]);
   });
 
   it('rejects an Object type with missing fields', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-        }),
-      ),
-    ).to.throw(
-      'SomeObject fields must be an object with field names as keys or a ' +
-        'function which returns such an object.',
-    );
-  });
+    const schema = buildSchema(`
+      type Query {
+        test: IncompleteObject
+      }
 
-  it('rejects an Object type field with undefined config', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          fields: {
-            f: undefined,
-          },
-        }),
-      ),
-    ).to.throw('SomeObject.f field config must be an object');
+      type IncompleteObject
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message: 'Type IncompleteObject must define one or more fields.',
+        locations: [{ line: 6, column: 7 }],
+      },
+    ]);
+
+    const manualSchema = schemaWithFieldType(
+      new GraphQLObjectType({
+        name: 'IncompleteObject',
+        fields: {},
+      }),
+    );
+    expect(validateSchema(manualSchema)).to.deep.equal([
+      {
+        message: 'Type IncompleteObject must define one or more fields.',
+      },
+    ]);
+
+    const manualSchema2 = schemaWithFieldType(
+      new GraphQLObjectType({
+        name: 'IncompleteObject',
+        fields() {
+          return {};
+        },
+      }),
+    );
+    expect(validateSchema(manualSchema2)).to.deep.equal([
+      {
+        message: 'Type IncompleteObject must define one or more fields.',
+      },
+    ]);
   });
 
   it('rejects an Object type with incorrectly named fields', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          fields: { 'bad-name-with-dashes': { type: GraphQLString } },
-        }),
-      ),
-    ).to.throw(
-      'Names must match /^[_a-zA-Z][_a-zA-Z0-9]*$/ but "bad-name-with-dashes" does not.',
+    const schema = schemaWithFieldType(
+      new GraphQLObjectType({
+        name: 'SomeObject',
+        fields: { 'bad-name-with-dashes': { type: GraphQLString } },
+      }),
     );
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Names must match /^[_a-zA-Z][_a-zA-Z0-9]*$/ but "bad-name-with-dashes" does not.',
+      },
+    ]);
   });
 
-  it('warns about an Object type with reserved named fields', () => {
-    /* eslint-disable no-console */
-    const realConsoleWarn = console.warn;
-    const calls = [];
-    console.warn = function() {
-      calls.push(Array.prototype.slice.call(arguments));
-    };
-    try {
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          fields: { __notPartOfIntrospection: { type: GraphQLString } },
-        }),
-      );
-
-      expect(calls[0][0]).contains(
-        'Name "__notPartOfIntrospection" must not begin with "__", which is reserved by GraphQL introspection.',
-      );
-    } finally {
-      console.warn = realConsoleWarn;
-    }
-    /* eslint-enable no-console */
+  it('accepts an Object type with explicitly allowed legacy named fields', () => {
+    const schemaBad = new GraphQLSchema({
+      query: new GraphQLObjectType({
+        name: 'Query',
+        fields: { __badName: { type: GraphQLString } },
+      }),
+    });
+    const schemaOk = new GraphQLSchema({
+      query: new GraphQLObjectType({
+        name: 'Query',
+        fields: { __badName: { type: GraphQLString } },
+      }),
+      allowedLegacyNames: ['__badName'],
+    });
+    expect(validateSchema(schemaBad)).to.deep.equal([
+      {
+        message:
+          'Name "__badName" must not begin with "__", which is reserved by GraphQL introspection.',
+      },
+    ]);
+    expect(validateSchema(schemaOk)).to.deep.equal([]);
   });
 
-  it('rejects an Object type with incorrectly typed fields', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          fields: [{ field: GraphQLString }],
+  it('throws with bad value for explicitly allowed legacy names', () => {
+    expect(
+      () =>
+        new GraphQLSchema({
+          query: new GraphQLObjectType({
+            name: 'Query',
+            fields: { __badName: { type: GraphQLString } },
+          }),
+          // $DisableFlowOnNegativeTest
+          allowedLegacyNames: true,
         }),
-      ),
-    ).to.throw(
-      'SomeObject fields must be an object with field names as keys or a ' +
-        'function which returns such an object.',
-    );
-  });
-
-  it('rejects an Object type with empty fields', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          fields: {},
-        }),
-      ),
-    ).to.throw(
-      'SomeObject fields must be an object with field names as keys or a ' +
-        'function which returns such an object.',
-    );
-  });
-
-  it('rejects an Object type with a field function that returns nothing', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          fields() {},
-        }),
-      ),
-    ).to.throw(
-      'SomeObject fields must be an object with field names as keys or a ' +
-        'function which returns such an object.',
-    );
-  });
-
-  it('rejects an Object type with a field function that returns empty', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          fields() {
-            return {};
-          },
-        }),
-      ),
-    ).to.throw(
-      'SomeObject fields must be an object with field names as keys or a ' +
-        'function which returns such an object.',
-    );
+    ).to.throw('"allowedLegacyNames" must be Array if provided but got: true.');
   });
 });
 
 describe('Type System: Fields args must be properly named', () => {
   it('accepts field args with valid names', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          fields: {
-            goodField: {
-              type: GraphQLString,
-              args: {
-                goodArg: { type: GraphQLString },
-              },
-            },
-          },
-        }),
-      ),
-    ).not.to.throw();
-  });
-
-  it('rejects field arg with invalid names', () => {
-    expect(() => {
-      const QueryType = new GraphQLObjectType({
+    const schema = schemaWithFieldType(
+      new GraphQLObjectType({
         name: 'SomeObject',
         fields: {
-          badField: {
+          goodField: {
             type: GraphQLString,
             args: {
-              'bad-name-with-dashes': { type: GraphQLString },
+              goodArg: { type: GraphQLString },
             },
           },
         },
-      });
-      return new GraphQLSchema({ query: QueryType });
-    }).to.throw(
-      'Names must match /^[_a-zA-Z][_a-zA-Z0-9]*$/ but "bad-name-with-dashes" does not.',
+      }),
     );
+    expect(validateSchema(schema)).to.deep.equal([]);
+  });
+
+  it('rejects field arg with invalid names', () => {
+    const QueryType = new GraphQLObjectType({
+      name: 'SomeObject',
+      fields: {
+        badField: {
+          type: GraphQLString,
+          args: {
+            'bad-name-with-dashes': { type: GraphQLString },
+          },
+        },
+      },
+    });
+    const schema = new GraphQLSchema({ query: QueryType });
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Names must match /^[_a-zA-Z][_a-zA-Z0-9]*$/ but "bad-name-with-dashes" does not.',
+      },
+    ]);
   });
 });
 
-describe('Type System: Fields args must be objects', () => {
-  it('accepts an Object type with field args', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          fields: {
-            goodField: {
-              type: GraphQLString,
-              args: {
-                goodArg: { type: GraphQLString },
-              },
-            },
-          },
-        }),
-      ),
-    ).not.to.throw();
-  });
+describe('Type System: Union types must be valid', () => {
+  it('accepts a Union type with member types', () => {
+    const schema = buildSchema(`
+      type Query {
+        test: GoodUnion
+      }
 
-  it('rejects an Object type with incorrectly typed field args', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          fields: {
-            badField: {
-              type: GraphQLString,
-              args: [{ badArg: GraphQLString }],
-            },
-          },
-        }),
-      ),
-    ).to.throw(
-      'SomeObject.badField args must be an object with argument names as keys.',
-    );
-  });
-});
+      type TypeA {
+        field: String
+      }
 
-describe('Type System: Object interfaces must be array', () => {
-  it('accepts an Object type with array interfaces', () => {
-    expect(() => {
-      const AnotherInterfaceType = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: { f: { type: GraphQLString } },
-      });
+      type TypeB {
+        field: String
+      }
 
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          interfaces: [AnotherInterfaceType],
-          fields: { f: { type: GraphQLString } },
-        }),
-      );
-    }).not.to.throw();
-  });
-
-  it('accepts an Object type with interfaces as a function returning an array', () => {
-    expect(() => {
-      const AnotherInterfaceType = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: { f: { type: GraphQLString } },
-      });
-
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          interfaces: () => [AnotherInterfaceType],
-          fields: { f: { type: GraphQLString } },
-        }),
-      );
-    }).not.to.throw();
-  });
-
-  it('rejects an Object type with incorrectly typed interfaces', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          interfaces: {},
-          fields: { f: { type: GraphQLString } },
-        }),
-      ),
-    ).to.throw(
-      'SomeObject interfaces must be an Array or a function which returns an Array.',
-    );
-  });
-
-  it('rejects an Object that declare it implements same interface more than once', () => {
-    expect(() => {
-      const NonUniqInterface = new GraphQLInterfaceType({
-        name: 'NonUniqInterface',
-        fields: { f: { type: GraphQLString } },
-      });
-
-      const AnotherInterface = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: { f: { type: GraphQLString } },
-      });
-
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          interfaces: () => [
-            NonUniqInterface,
-            AnotherInterface,
-            NonUniqInterface,
-          ],
-          fields: { f: { type: GraphQLString } },
-        }),
-      );
-    }).to.throw(
-      'SomeObject may declare it implements NonUniqInterface only once.',
-    );
-  });
-
-  it('rejects an Object type with interfaces as a function returning an incorrect type', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          interfaces() {
-            return {};
-          },
-          fields: { f: { type: GraphQLString } },
-        }),
-      ),
-    ).to.throw(
-      'SomeObject interfaces must be an Array or a function which returns an Array.',
-    );
-  });
-});
-
-describe('Type System: Union types must be array', () => {
-  it('accepts a Union type with array types', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLUnionType({
-          name: 'SomeUnion',
-          types: [SomeObjectType],
-        }),
-      ),
-    ).not.to.throw();
-  });
-
-  it('accepts a Union type with function returning an array of types', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLUnionType({
-          name: 'SomeUnion',
-          types: () => [SomeObjectType],
-        }),
-      ),
-    ).not.to.throw();
-  });
-
-  it('rejects a Union type without types', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLUnionType({
-          name: 'SomeUnion',
-        }),
-      ),
-    ).to.throw(
-      'Must provide Array of types or a function which returns such an array ' +
-        'for Union SomeUnion.',
-    );
+      union GoodUnion =
+        | TypeA
+        | TypeB
+    `);
+    expect(validateSchema(schema)).to.deep.equal([]);
   });
 
   it('rejects a Union type with empty types', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLUnionType({
-          name: 'SomeUnion',
-          types: [],
-        }),
-      ),
-    ).to.throw(
-      'Must provide Array of types or a function which returns such an array ' +
-        'for Union SomeUnion.',
-    );
-  });
+    let schema = buildSchema(`
+      type Query {
+        test: BadUnion
+      }
 
-  it('rejects a Union type with incorrectly typed types', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLUnionType({
-          name: 'SomeUnion',
-          types: {
-            SomeObjectType,
-          },
-        }),
-      ),
-    ).to.throw(
-      'Must provide Array of types or a function which returns such an array ' +
-        'for Union SomeUnion.',
+      union BadUnion
+    `);
+
+    schema = extendSchema(
+      schema,
+      parse(`
+        directive @test on UNION
+
+        extend union BadUnion @test
+      `),
     );
+
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message: 'Union type BadUnion must define one or more member types.',
+        locations: [{ line: 6, column: 7 }, { line: 4, column: 9 }],
+      },
+    ]);
   });
 
   it('rejects a Union type with duplicated member type', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLUnionType({
-          name: 'SomeUnion',
-          types: [SomeObjectType, SomeObjectType],
-        }),
-      ),
-    ).to.throw('SomeUnion can include SomeObject type only once.');
+    let schema = buildSchema(`
+      type Query {
+        test: BadUnion
+      }
+
+      type TypeA {
+        field: String
+      }
+
+      type TypeB {
+        field: String
+      }
+
+      union BadUnion =
+        | TypeA
+        | TypeB
+        | TypeA
+    `);
+
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message: 'Union type BadUnion can only include type TypeA once.',
+        locations: [{ line: 15, column: 11 }, { line: 17, column: 11 }],
+      },
+    ]);
+
+    schema = extendSchema(schema, parse('extend union BadUnion = TypeB'));
+
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message: 'Union type BadUnion can only include type TypeA once.',
+        locations: [{ line: 15, column: 11 }, { line: 17, column: 11 }],
+      },
+      {
+        message: 'Union type BadUnion can only include type TypeB once.',
+        locations: [{ line: 16, column: 11 }, { line: 1, column: 25 }],
+      },
+    ]);
+  });
+
+  it('rejects a Union type with non-Object members types', () => {
+    let schema = buildSchema(`
+      type Query {
+        test: BadUnion
+      }
+
+      type TypeA {
+        field: String
+      }
+
+      type TypeB {
+        field: String
+      }
+
+      union BadUnion =
+        | TypeA
+        | String
+        | TypeB
+    `);
+
+    schema = extendSchema(schema, parse('extend union BadUnion = Int'));
+
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Union type BadUnion can only include Object types, it cannot include String.',
+        locations: [{ line: 16, column: 11 }],
+      },
+      {
+        message:
+          'Union type BadUnion can only include Object types, it cannot include Int.',
+        locations: [{ line: 1, column: 25 }],
+      },
+    ]);
+
+    const badUnionMemberTypes = [
+      GraphQLString,
+      new GraphQLNonNull(SomeObjectType),
+      new GraphQLList(SomeObjectType),
+      SomeInterfaceType,
+      SomeUnionType,
+      SomeEnumType,
+      SomeInputObjectType,
+    ];
+    for (const memberType of badUnionMemberTypes) {
+      const badUnion = new GraphQLUnionType({
+        name: 'BadUnion',
+        // $DisableFlowOnNegativeTest
+        types: [memberType],
+      });
+      const badSchema = schemaWithFieldType(badUnion);
+      expect(validateSchema(badSchema)).to.deep.equal([
+        {
+          message:
+            'Union type BadUnion can only include Object types, ' +
+            `it cannot include ${inspect(memberType)}.`,
+        },
+      ]);
+    }
   });
 });
 
 describe('Type System: Input Objects must have fields', () => {
-  function schemaWithInputObject(inputObjectType) {
-    return new GraphQLSchema({
-      query: new GraphQLObjectType({
-        name: 'Query',
-        fields: {
-          f: {
-            type: GraphQLString,
-            args: {
-              badArg: { type: inputObjectType },
-            },
-          },
-        },
-      }),
-    });
-  }
-
   it('accepts an Input Object type with fields', () => {
-    expect(() =>
-      schemaWithInputObject(
-        new GraphQLInputObjectType({
-          name: 'SomeInputObject',
-          fields: {
-            f: { type: GraphQLString },
-          },
-        }),
-      ),
-    ).not.to.throw();
-  });
+    const schema = buildSchema(`
+      type Query {
+        field(arg: SomeInputObject): String
+      }
 
-  it('accepts an Input Object type with a field function', () => {
-    expect(() =>
-      schemaWithInputObject(
-        new GraphQLInputObjectType({
-          name: 'SomeInputObject',
-          fields() {
-            return {
-              f: { type: GraphQLString },
-            };
-          },
-        }),
-      ),
-    ).not.to.throw();
+      input SomeInputObject {
+        field: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([]);
   });
 
   it('rejects an Input Object type with missing fields', () => {
-    expect(() =>
-      schemaWithInputObject(
-        new GraphQLInputObjectType({
-          name: 'SomeInputObject',
-        }),
-      ),
-    ).to.throw(
-      'SomeInputObject fields must be an object with field names as keys or a ' +
-        'function which returns such an object.',
+    let schema = buildSchema(`
+      type Query {
+        field(arg: SomeInputObject): String
+      }
+
+      input SomeInputObject
+    `);
+
+    schema = extendSchema(
+      schema,
+      parse(`
+        directive @test on INPUT_OBJECT
+
+        extend input SomeInputObject @test
+      `),
     );
+
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Input Object type SomeInputObject must define one or more fields.',
+        locations: [{ line: 6, column: 7 }, { line: 4, column: 9 }],
+      },
+    ]);
+  });
+
+  it('accepts an Input Object with breakable circular reference', () => {
+    const schema = buildSchema(`
+      type Query {
+        field(arg: SomeInputObject): String
+      }
+
+      input SomeInputObject {
+        self: SomeInputObject
+        arrayOfSelf: [SomeInputObject]
+        nonNullArrayOfSelf: [SomeInputObject]!
+        nonNullArrayOfNonNullSelf: [SomeInputObject!]!
+        intermediateSelf: AnotherInputObject
+      }
+
+      input AnotherInputObject {
+        parent: SomeInputObject
+      }
+    `);
+
+    expect(validateSchema(schema)).to.deep.equal([]);
+  });
+
+  it('rejects an Input Object with non-breakable circular reference', () => {
+    const schema = buildSchema(`
+      type Query {
+        field(arg: SomeInputObject): String
+      }
+
+      input SomeInputObject {
+        nonNullSelf: SomeInputObject!
+      }
+    `);
+
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Cannot reference Input Object "SomeInputObject" within itself through a series of non-null fields: "nonNullSelf".',
+        locations: [{ line: 7, column: 9 }],
+      },
+    ]);
+  });
+
+  it('rejects Input Objects with non-breakable circular reference spread across them', () => {
+    const schema = buildSchema(`
+      type Query {
+        field(arg: SomeInputObject): String
+      }
+
+      input SomeInputObject {
+        startLoop: AnotherInputObject!
+      }
+
+      input AnotherInputObject {
+        nextInLoop: YetAnotherInputObject!
+      }
+
+      input YetAnotherInputObject {
+        closeLoop: SomeInputObject!
+      }
+    `);
+
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Cannot reference Input Object "SomeInputObject" within itself through a series of non-null fields: "startLoop.nextInLoop.closeLoop".',
+        locations: [
+          { line: 7, column: 9 },
+          { line: 11, column: 9 },
+          { line: 15, column: 9 },
+        ],
+      },
+    ]);
+  });
+
+  it('rejects Input Objects with multiple non-breakable circular reference', () => {
+    const schema = buildSchema(`
+      type Query {
+        field(arg: SomeInputObject): String
+      }
+
+      input SomeInputObject {
+        startLoop: AnotherInputObject!
+      }
+
+      input AnotherInputObject {
+        closeLoop: SomeInputObject!
+        startSecondLoop: YetAnotherInputObject!
+      }
+
+      input YetAnotherInputObject {
+        closeSecondLoop: AnotherInputObject!
+        nonNullSelf: YetAnotherInputObject!
+      }
+    `);
+
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Cannot reference Input Object "SomeInputObject" within itself through a series of non-null fields: "startLoop.closeLoop".',
+        locations: [{ line: 7, column: 9 }, { line: 11, column: 9 }],
+      },
+      {
+        message:
+          'Cannot reference Input Object "AnotherInputObject" within itself through a series of non-null fields: "startSecondLoop.closeSecondLoop".',
+        locations: [{ line: 12, column: 9 }, { line: 16, column: 9 }],
+      },
+      {
+        message:
+          'Cannot reference Input Object "YetAnotherInputObject" within itself through a series of non-null fields: "nonNullSelf".',
+        locations: [{ line: 17, column: 9 }],
+      },
+    ]);
   });
 
   it('rejects an Input Object type with incorrectly typed fields', () => {
-    expect(() =>
-      schemaWithInputObject(
-        new GraphQLInputObjectType({
-          name: 'SomeInputObject',
-          fields: [{ field: GraphQLString }],
-        }),
-      ),
-    ).to.throw(
-      'SomeInputObject fields must be an object with field names as keys or a ' +
-        'function which returns such an object.',
-    );
-  });
+    const schema = buildSchema(`
+      type Query {
+        field(arg: SomeInputObject): String
+      }
 
-  it('rejects an Input Object type with empty fields', () => {
-    expect(() =>
-      schemaWithInputObject(
-        new GraphQLInputObjectType({
-          name: 'SomeInputObject',
-          fields: {},
-        }),
-      ),
-    ).to.throw(
-      'SomeInputObject fields must be an object with field names as keys or a ' +
-        'function which returns such an object.',
-    );
-  });
+      type SomeObject {
+        field: String
+      }
 
-  it('rejects an Input Object type with a field function that returns nothing', () => {
-    expect(() =>
-      schemaWithInputObject(
-        new GraphQLInputObjectType({
-          name: 'SomeInputObject',
-          fields() {},
-        }),
-      ),
-    ).to.throw(
-      'SomeInputObject fields must be an object with field names as keys or a ' +
-        'function which returns such an object.',
-    );
-  });
+      union SomeUnion = SomeObject
 
-  it('rejects an Input Object type with a field function that returns empty', () => {
-    expect(() =>
-      schemaWithInputObject(
-        new GraphQLInputObjectType({
-          name: 'SomeInputObject',
-          fields() {
-            return {};
-          },
-        }),
-      ),
-    ).to.throw(
-      'SomeInputObject fields must be an object with field names as keys or a ' +
-        'function which returns such an object.',
-    );
-  });
-});
-
-describe('Type System: Input Object fields must not have resolvers', () => {
-  function schemaWithInputObject(inputObjectType) {
-    return new GraphQLSchema({
-      query: new GraphQLObjectType({
-        name: 'Query',
-        fields: {
-          f: {
-            type: GraphQLString,
-            args: {
-              input: { type: inputObjectType },
-            },
-          },
-        },
-      }),
-    });
-  }
-
-  it('accepts an Input Object type with no resolver', () => {
-    expect(() =>
-      schemaWithInputObject(
-        new GraphQLInputObjectType({
-          name: 'SomeInputObject',
-          fields: {
-            f: {
-              type: GraphQLString,
-            },
-          },
-        }),
-      ),
-    ).not.to.throw();
-  });
-
-  it('accepts an Input Object type with null resolver', () => {
-    expect(() =>
-      schemaWithInputObject(
-        new GraphQLInputObjectType({
-          name: 'SomeInputObject',
-          fields: {
-            f: {
-              type: GraphQLString,
-              resolve: null,
-            },
-          },
-        }),
-      ),
-    ).not.to.throw();
-  });
-
-  it('accepts an Input Object type with undefined resolver', () => {
-    expect(() =>
-      schemaWithInputObject(
-        new GraphQLInputObjectType({
-          name: 'SomeInputObject',
-          fields: {
-            f: {
-              type: GraphQLString,
-              resolve: undefined,
-            },
-          },
-        }),
-      ),
-    ).not.to.throw();
-  });
-
-  it('rejects an Input Object type with resolver function', () => {
-    expect(() =>
-      schemaWithInputObject(
-        new GraphQLInputObjectType({
-          name: 'SomeInputObject',
-          fields: {
-            f: {
-              type: GraphQLString,
-              resolve: () => {
-                return 0;
-              },
-            },
-          },
-        }),
-      ),
-    ).to.throw(
-      'SomeInputObject.f field type has a resolve property,' +
-        ' but Input Types cannot define resolvers.',
-    );
-  });
-
-  it('rejects an Input Object type with resolver constant', () => {
-    expect(() =>
-      schemaWithInputObject(
-        new GraphQLInputObjectType({
-          name: 'SomeInputObject',
-          fields: {
-            f: {
-              type: GraphQLString,
-              resolve: {},
-            },
-          },
-        }),
-      ),
-    ).to.throw(
-      'SomeInputObject.f field type has a resolve property,' +
-        ' but Input Types cannot define resolvers.',
-    );
-  });
-});
-
-describe('Type System: Object types must be assertable', () => {
-  it('accepts an Object type with an isTypeOf function', () => {
-    expect(() => {
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'AnotherObject',
-          fields: { f: { type: GraphQLString } },
-        }),
-      );
-    }).not.to.throw();
-  });
-
-  it('rejects an Object type with an incorrect type for isTypeOf', () => {
-    expect(() => {
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'AnotherObject',
-          isTypeOf: {},
-          fields: { f: { type: GraphQLString } },
-        }),
-      );
-    }).to.throw('AnotherObject must provide "isTypeOf" as a function.');
-  });
-});
-
-describe('Type System: Interface types must be resolvable', () => {
-  it('accepts an Interface type defining resolveType', () => {
-    expect(() => {
-      const AnotherInterfaceType = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: { f: { type: GraphQLString } },
-      });
-
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          interfaces: [AnotherInterfaceType],
-          fields: { f: { type: GraphQLString } },
-        }),
-      );
-    }).not.to.throw();
-  });
-
-  it('accepts an Interface with implementing type defining isTypeOf', () => {
-    expect(() => {
-      const InterfaceTypeWithoutResolveType = new GraphQLInterfaceType({
-        name: 'InterfaceTypeWithoutResolveType',
-        fields: { f: { type: GraphQLString } },
-      });
-
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          interfaces: [InterfaceTypeWithoutResolveType],
-          fields: { f: { type: GraphQLString } },
-        }),
-      );
-    }).not.to.throw();
-  });
-
-  it('accepts an Interface type defining resolveType with implementing type defining isTypeOf', () => {
-    expect(() => {
-      const AnotherInterfaceType = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: { f: { type: GraphQLString } },
-      });
-
-      schemaWithFieldType(
-        new GraphQLObjectType({
-          name: 'SomeObject',
-          interfaces: [AnotherInterfaceType],
-          fields: { f: { type: GraphQLString } },
-        }),
-      );
-    }).not.to.throw();
-  });
-
-  it('rejects an Interface type with an incorrect type for resolveType', () => {
-    expect(
-      () =>
-        new GraphQLInterfaceType({
-          name: 'AnotherInterface',
-          resolveType: {},
-          fields: { f: { type: GraphQLString } },
-        }),
-    ).to.throw('AnotherInterface must provide "resolveType" as a function.');
-  });
-});
-
-describe('Type System: Union types must be resolvable', () => {
-  it('accepts a Union type defining resolveType', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLUnionType({
-          name: 'SomeUnion',
-          types: [SomeObjectType],
-        }),
-      ),
-    ).not.to.throw();
-  });
-
-  it('accepts a Union of Object types defining isTypeOf', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLUnionType({
-          name: 'SomeUnion',
-          types: [ObjectWithIsTypeOf],
-        }),
-      ),
-    ).not.to.throw();
-  });
-
-  it('accepts a Union type defining resolveType of Object types defining isTypeOf', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLUnionType({
-          name: 'SomeUnion',
-          types: [ObjectWithIsTypeOf],
-        }),
-      ),
-    ).not.to.throw();
-  });
-
-  it('rejects an Interface type with an incorrect type for resolveType', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLUnionType({
-          name: 'SomeUnion',
-          resolveType: {},
-          types: [ObjectWithIsTypeOf],
-        }),
-      ),
-    ).to.throw('SomeUnion must provide "resolveType" as a function.');
-  });
-});
-
-describe('Type System: Scalar types must be serializable', () => {
-  it('accepts a Scalar type defining serialize', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLScalarType({
-          name: 'SomeScalar',
-          serialize: () => null,
-        }),
-      ),
-    ).not.to.throw();
-  });
-
-  it('rejects a Scalar type not defining serialize', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLScalarType({
-          name: 'SomeScalar',
-        }),
-      ),
-    ).to.throw(
-      'SomeScalar must provide "serialize" function. If this custom Scalar ' +
-        'is also used as an input type, ensure "parseValue" and "parseLiteral" ' +
-        'functions are also provided.',
-    );
-  });
-
-  it('rejects a Scalar type defining serialize with an incorrect type', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLScalarType({
-          name: 'SomeScalar',
-          serialize: {},
-        }),
-      ),
-    ).to.throw(
-      'SomeScalar must provide "serialize" function. If this custom Scalar ' +
-        'is also used as an input type, ensure "parseValue" and "parseLiteral" ' +
-        'functions are also provided.',
-    );
-  });
-
-  it('accepts a Scalar type defining parseValue and parseLiteral', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLScalarType({
-          name: 'SomeScalar',
-          serialize: () => null,
-          parseValue: () => null,
-          parseLiteral: () => null,
-        }),
-      ),
-    ).not.to.throw();
-  });
-
-  it('rejects a Scalar type defining parseValue but not parseLiteral', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLScalarType({
-          name: 'SomeScalar',
-          serialize: () => null,
-          parseValue: () => null,
-        }),
-      ),
-    ).to.throw(
-      'SomeScalar must provide both "parseValue" and "parseLiteral" functions.',
-    );
-  });
-
-  it('rejects a Scalar type defining parseLiteral but not parseValue', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLScalarType({
-          name: 'SomeScalar',
-          serialize: () => null,
-          parseLiteral: () => null,
-        }),
-      ),
-    ).to.throw(
-      'SomeScalar must provide both "parseValue" and "parseLiteral" functions.',
-    );
-  });
-
-  it('rejects a Scalar type defining parseValue and parseLiteral with an incorrect type', () => {
-    expect(() =>
-      schemaWithFieldType(
-        new GraphQLScalarType({
-          name: 'SomeScalar',
-          serialize: () => null,
-          parseValue: {},
-          parseLiteral: {},
-        }),
-      ),
-    ).to.throw(
-      'SomeScalar must provide both "parseValue" and "parseLiteral" functions.',
-    );
+      input SomeInputObject {
+        badObject: SomeObject
+        badUnion: SomeUnion
+        goodInputObject: SomeInputObject
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'The type of SomeInputObject.badObject must be Input Type but got: SomeObject.',
+        locations: [{ line: 13, column: 20 }],
+      },
+      {
+        message:
+          'The type of SomeInputObject.badUnion must be Input Type but got: SomeUnion.',
+        locations: [{ line: 14, column: 19 }],
+      },
+    ]);
   });
 });
 
 describe('Type System: Enum types must be well defined', () => {
-  it('accepts a well defined Enum type with empty value definition', () => {
-    expect(
-      () =>
-        new GraphQLEnumType({
-          name: 'SomeEnum',
-          values: {
-            FOO: {},
-            BAR: {},
-          },
-        }),
-    ).not.to.throw();
-  });
-
-  it('accepts a well defined Enum type with internal value definition', () => {
-    expect(
-      () =>
-        new GraphQLEnumType({
-          name: 'SomeEnum',
-          values: {
-            FOO: { value: 10 },
-            BAR: { value: 20 },
-          },
-        }),
-    ).not.to.throw();
-  });
-
   it('rejects an Enum type without values', () => {
-    expect(
-      () =>
-        new GraphQLEnumType({
-          name: 'SomeEnum',
-        }),
-    ).to.throw('SomeEnum values must be an object with value names as keys.');
-  });
+    let schema = buildSchema(`
+      type Query {
+        field: SomeEnum
+      }
 
-  it('rejects an Enum type with empty values', () => {
-    expect(
-      () =>
-        new GraphQLEnumType({
-          name: 'SomeEnum',
-          values: {},
-        }),
-    ).to.throw('SomeEnum values must be an object with value names as keys.');
-  });
+      enum SomeEnum
+    `);
 
-  it('rejects an Enum type with incorrectly typed values', () => {
-    expect(
-      () =>
-        new GraphQLEnumType({
-          name: 'SomeEnum',
-          values: [{ FOO: 10 }],
-        }),
-    ).to.throw('SomeEnum values must be an object with value names as keys.');
-  });
+    schema = extendSchema(
+      schema,
+      parse(`
+        directive @test on ENUM
 
-  it('rejects an Enum type with missing value definition', () => {
-    expect(
-      () =>
-        new GraphQLEnumType({
-          name: 'SomeEnum',
-          values: {
-            FOO: null,
-          },
-        }),
-    ).to.throw(
-      'SomeEnum.FOO must refer to an object with a "value" key representing ' +
-        'an internal value but got: null.',
+        extend enum SomeEnum @test
+      `),
     );
-  });
 
-  it('rejects an Enum type with incorrectly typed value definition', () => {
-    expect(
-      () =>
-        new GraphQLEnumType({
-          name: 'SomeEnum',
-          values: {
-            FOO: 10,
-          },
-        }),
-    ).to.throw(
-      'SomeEnum.FOO must refer to an object with a "value" key representing ' +
-        'an internal value but got: 10.',
-    );
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message: 'Enum type SomeEnum must define one or more values.',
+        locations: [{ line: 6, column: 7 }, { line: 4, column: 9 }],
+      },
+    ]);
   });
 
   it('rejects an Enum type with incorrectly named values', () => {
-    function enumValue(name) {
-      return new GraphQLEnumType({
-        name: 'SomeEnum',
-        values: {
-          [name]: {},
-        },
-      });
-    }
-
-    expect(() => enumValue('#value')).to.throw(
-      'Names must match /^[_a-zA-Z][_a-zA-Z0-9]*$/ but "#value" does not.',
-    );
-
-    expect(() => enumValue('true')).to.throw(
-      'Name "true" can not be used as an Enum value.',
-    );
-
-    expect(() => enumValue('false')).to.throw(
-      'Name "false" can not be used as an Enum value.',
-    );
-
-    expect(() => enumValue('null')).to.throw(
-      'Name "null" can not be used as an Enum value.',
-    );
-  });
-
-  it('does not allow isDeprecated without deprecationReason on enum', () => {
-    expect(
-      () =>
+    function schemaWithEnum(name) {
+      return schemaWithFieldType(
         new GraphQLEnumType({
           name: 'SomeEnum',
           values: {
-            value: { isDeprecated: true },
+            [name]: {},
           },
         }),
-    ).to.throw(
-      'SomeEnum.value should provide "deprecationReason" instead ' +
-        'of "isDeprecated".',
-    );
+      );
+    }
+
+    const schema1 = schemaWithEnum('#value');
+    expect(validateSchema(schema1)).to.deep.equal([
+      {
+        message:
+          'Names must match /^[_a-zA-Z][_a-zA-Z0-9]*$/ but "#value" does not.',
+      },
+    ]);
+
+    const schema2 = schemaWithEnum('1value');
+    expect(validateSchema(schema2)).to.deep.equal([
+      {
+        message:
+          'Names must match /^[_a-zA-Z][_a-zA-Z0-9]*$/ but "1value" does not.',
+      },
+    ]);
+
+    const schema3 = schemaWithEnum('KEBAB-CASE');
+    expect(validateSchema(schema3)).to.deep.equal([
+      {
+        message:
+          'Names must match /^[_a-zA-Z][_a-zA-Z0-9]*$/ but "KEBAB-CASE" does not.',
+      },
+    ]);
+
+    const schema4 = schemaWithEnum('true');
+    expect(validateSchema(schema4)).to.deep.equal([
+      { message: 'Enum type SomeEnum cannot include value: true.' },
+    ]);
+
+    const schema5 = schemaWithEnum('false');
+    expect(validateSchema(schema5)).to.deep.equal([
+      { message: 'Enum type SomeEnum cannot include value: false.' },
+    ]);
+
+    const schema6 = schemaWithEnum('null');
+    expect(validateSchema(schema6)).to.deep.equal([
+      { message: 'Enum type SomeEnum cannot include value: null.' },
+    ]);
   });
 });
 
 describe('Type System: Object fields must have output types', () => {
-  function schemaWithObjectFieldOfType(fieldType) {
+  function schemaWithObjectFieldOfType(fieldType: GraphQLOutputType) {
     const BadObjectType = new GraphQLObjectType({
       name: 'BadObject',
       fields: {
@@ -1280,162 +977,303 @@ describe('Type System: Object fields must have output types', () => {
           f: { type: BadObjectType },
         },
       }),
+      types: [SomeObjectType],
     });
   }
 
-  outputTypes.forEach(type => {
-    it(`accepts an output type as an Object field type: ${type}`, () => {
-      expect(() => schemaWithObjectFieldOfType(type)).not.to.throw();
+  for (const type of outputTypes) {
+    const typeName = inspect(type);
+    it(`accepts an output type as an Object field type: ${typeName}`, () => {
+      const schema = schemaWithObjectFieldOfType(type);
+      expect(validateSchema(schema)).to.deep.equal([]);
     });
-  });
+  }
 
   it('rejects an empty Object field type', () => {
-    expect(() => schemaWithObjectFieldOfType(undefined)).to.throw(
-      'BadObject.badField field type must be Output Type but got: undefined.',
-    );
-  });
-
-  notOutputTypes.forEach(type => {
-    it(`rejects a non-output type as an Object field type: ${type}`, () => {
-      expect(() => schemaWithObjectFieldOfType(type)).to.throw(
-        `BadObject.badField field type must be Output Type but got: ${type}.`,
-      );
-    });
-  });
-});
-
-describe('Type System: Object fields must have valid resolve values', () => {
-  function schemaWithObjectWithFieldResolver(resolveValue) {
-    const BadResolverType = new GraphQLObjectType({
-      name: 'BadResolver',
-      fields: {
-        badField: {
-          type: GraphQLString,
-          resolve: resolveValue,
-        },
+    // $DisableFlowOnNegativeTest
+    const schema = schemaWithObjectFieldOfType(undefined);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'The type of BadObject.badField must be Output Type but got: undefined.',
       },
-    });
+    ]);
+  });
 
-    return new GraphQLSchema({
-      query: new GraphQLObjectType({
-        name: 'Query',
-        fields: {
-          f: { type: BadResolverType },
+  for (const type of notOutputTypes) {
+    const typeStr = inspect(type);
+    it(`rejects a non-output type as an Object field type: ${typeStr}`, () => {
+      // $DisableFlowOnNegativeTest
+      const schema = schemaWithObjectFieldOfType(type);
+      expect(validateSchema(schema)).to.deep.equal([
+        {
+          message: `The type of BadObject.badField must be Output Type but got: ${typeStr}.`,
         },
-      }),
+      ]);
     });
   }
 
-  it('accepts a lambda as an Object field resolver', () => {
-    expect(() => schemaWithObjectWithFieldResolver(() => ({}))).not.to.throw();
+  it('rejects a non-type value as an Object field type', () => {
+    // $DisableFlowOnNegativeTest
+    const schema = schemaWithObjectFieldOfType(Number);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'The type of BadObject.badField must be Output Type but got: [function Number].',
+      },
+      {
+        message: 'Expected GraphQL named type but got: [function Number].',
+      },
+    ]);
   });
 
-  it('rejects an empty Object field resolver', () => {
-    expect(() => schemaWithObjectWithFieldResolver({})).to.throw(
-      'BadResolver.badField field resolver must be a function if provided, ' +
-        'but got: [object Object].',
-    );
-  });
+  it('rejects with relevant locations for a non-output type as an Object field type', () => {
+    const schema = buildSchema(`
+      type Query {
+        field: [SomeInputObject]
+      }
 
-  it('rejects a constant scalar value resolver', () => {
-    expect(() => schemaWithObjectWithFieldResolver(0)).to.throw(
-      'BadResolver.badField field resolver must be a function if provided, ' +
-        'but got: 0.',
-    );
+      input SomeInputObject {
+        field: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'The type of Query.field must be Output Type but got: [SomeInputObject].',
+        locations: [{ line: 3, column: 16 }],
+      },
+    ]);
   });
 });
 
-describe('Type System: Objects can only implement interfaces', () => {
-  function schemaWithObjectImplementingType(implementedType) {
-    const BadObjectType = new GraphQLObjectType({
-      name: 'BadObject',
-      interfaces: [implementedType],
-      fields: { f: { type: GraphQLString } },
-    });
-
-    return new GraphQLSchema({
+describe('Type System: Objects can only implement unique interfaces', () => {
+  it('rejects an Object implementing a non-type values', () => {
+    const schema = new GraphQLSchema({
       query: new GraphQLObjectType({
-        name: 'Query',
-        fields: {
-          f: { type: BadObjectType },
-        },
-      }),
-      types: [BadObjectType],
-    });
-  }
-
-  it('accepts an Object implementing an Interface', () => {
-    expect(() => {
-      const AnotherInterfaceType = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
+        name: 'BadObject',
+        // $DisableFlowOnNegativeTest
+        interfaces: [undefined],
         fields: { f: { type: GraphQLString } },
-      });
+      }),
+    });
 
-      schemaWithObjectImplementingType(AnotherInterfaceType);
-    }).not.to.throw();
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Type BadObject must only implement Interface types, it cannot implement undefined.',
+      },
+    ]);
   });
 
-  const notInterfaceTypes = withModifiers([
-    SomeScalarType,
-    SomeEnumType,
-    SomeObjectType,
-    SomeUnionType,
-    SomeInputObjectType,
-  ]);
+  it('rejects an Object implementing a non-Interface type', () => {
+    const schema = buildSchema(`
+      type Query {
+        test: BadObject
+      }
 
-  notInterfaceTypes.forEach(type => {
-    it(`rejects an Object implementing a non-Interface type: ${type}`, () => {
-      expect(() => schemaWithObjectImplementingType(type)).to.throw(
-        `BadObject may only implement Interface types, it cannot implement: ${
-          type
-        }.`,
-      );
-    });
+      input SomeInputObject {
+        field: String
+      }
+
+      type BadObject implements SomeInputObject {
+        field: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Type BadObject must only implement Interface types, it cannot implement SomeInputObject.',
+        locations: [{ line: 10, column: 33 }],
+      },
+    ]);
+  });
+
+  it('rejects an Object implementing the same interface twice', () => {
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
+
+      interface AnotherInterface {
+        field: String
+      }
+
+      type AnotherObject implements AnotherInterface & AnotherInterface {
+        field: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message: 'Type AnotherObject can only implement AnotherInterface once.',
+        locations: [{ line: 10, column: 37 }, { line: 10, column: 56 }],
+      },
+    ]);
+  });
+
+  it('rejects an Object implementing the same interface twice due to extension', () => {
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
+
+      interface AnotherInterface {
+        field: String
+      }
+
+      type AnotherObject implements AnotherInterface {
+        field: String
+      }
+    `);
+    const extendedSchema = extendSchema(
+      schema,
+      parse('extend type AnotherObject implements AnotherInterface'),
+    );
+    expect(validateSchema(extendedSchema)).to.deep.equal([
+      {
+        message: 'Type AnotherObject can only implement AnotherInterface once.',
+        locations: [{ line: 10, column: 37 }, { line: 1, column: 38 }],
+      },
+    ]);
   });
 });
 
-describe('Type System: Unions must represent Object types', () => {
-  function schemaWithUnionOfType(type) {
-    const BadUnionType = new GraphQLUnionType({
-      name: 'BadUnion',
-      types: [type],
-    });
+describe('Type System: Interface extensions should be valid', () => {
+  it('rejects an Object implementing the extended interface due to missing field', () => {
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
 
-    return new GraphQLSchema({
-      query: new GraphQLObjectType({
-        name: 'Query',
-        fields: {
-          f: { type: BadUnionType },
-        },
-      }),
-    });
-  }
+      interface AnotherInterface {
+        field: String
+      }
 
-  it('accepts a Union of an Object Type', () => {
-    expect(() => schemaWithUnionOfType(SomeObjectType)).not.to.throw();
+      type AnotherObject implements AnotherInterface {
+        field: String
+      }
+    `);
+    const extendedSchema = extendSchema(
+      schema,
+      parse(`
+        extend interface AnotherInterface {
+          newField: String
+        }
+
+        extend type AnotherObject {
+          differentNewField: String
+        }
+      `),
+    );
+    expect(validateSchema(extendedSchema)).to.deep.equal([
+      {
+        message:
+          'Interface field AnotherInterface.newField expected but AnotherObject does not provide it.',
+        locations: [
+          { line: 3, column: 11 },
+          { line: 10, column: 7 },
+          { line: 6, column: 9 },
+        ],
+      },
+    ]);
   });
 
-  const notObjectTypes = withModifiers([
-    SomeScalarType,
-    SomeEnumType,
-    SomeInterfaceType,
-    SomeUnionType,
-    SomeInputObjectType,
-  ]);
+  it('rejects an Object implementing the extended interface due to missing field args', () => {
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
 
-  notObjectTypes.forEach(type => {
-    it(`rejects a Union of a non-Object type: ${type}`, () => {
-      expect(() => schemaWithUnionOfType(type)).to.throw(
-        `BadUnion may only contain Object types, it cannot contain: ${type}.`,
-      );
-    });
+      interface AnotherInterface {
+        field: String
+      }
+
+      type AnotherObject implements AnotherInterface {
+        field: String
+      }
+    `);
+    const extendedSchema = extendSchema(
+      schema,
+      parse(`
+        extend interface AnotherInterface {
+          newField(test: Boolean): String
+        }
+
+        extend type AnotherObject {
+          newField: String
+        }
+      `),
+    );
+    expect(validateSchema(extendedSchema)).to.deep.equal([
+      {
+        message:
+          'Interface field argument AnotherInterface.newField(test:) expected but AnotherObject.newField does not provide it.',
+        locations: [{ line: 3, column: 20 }, { line: 7, column: 11 }],
+      },
+    ]);
+  });
+
+  it('rejects Objects implementing the extended interface due to mismatching interface type', () => {
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
+
+      interface AnotherInterface {
+        field: String
+      }
+
+      type AnotherObject implements AnotherInterface {
+        field: String
+      }
+    `);
+    const extendedSchema = extendSchema(
+      schema,
+      parse(`
+        extend interface AnotherInterface {
+          newInterfaceField: NewInterface
+        }
+
+        interface NewInterface {
+          newField: String
+        }
+
+        interface MismatchingInterface {
+          newField: String
+        }
+
+        extend type AnotherObject {
+          newInterfaceField: MismatchingInterface
+        }
+
+        # Required to prevent unused interface errors
+        type DummyObject implements NewInterface & MismatchingInterface {
+          newField: String
+        }
+      `),
+    );
+    expect(validateSchema(extendedSchema)).to.deep.equal([
+      {
+        message:
+          'Interface field AnotherInterface.newInterfaceField expects type NewInterface but AnotherObject.newInterfaceField is type MismatchingInterface.',
+        locations: [{ line: 3, column: 30 }, { line: 15, column: 30 }],
+      },
+    ]);
   });
 });
 
 describe('Type System: Interface fields must have output types', () => {
-  function schemaWithInterfaceFieldOfType(fieldType) {
+  function schemaWithInterfaceFieldOfType(fieldType: GraphQLOutputType) {
     const BadInterfaceType = new GraphQLInterfaceType({
       name: 'BadInterface',
+      fields: {
+        badField: { type: fieldType },
+      },
+    });
+
+    const BadImplementingType = new GraphQLObjectType({
+      name: 'BadImplementing',
+      interfaces: [BadInterfaceType],
       fields: {
         badField: { type: fieldType },
       },
@@ -1448,34 +1286,115 @@ describe('Type System: Interface fields must have output types', () => {
           f: { type: BadInterfaceType },
         },
       }),
+      types: [BadImplementingType, SomeObjectType],
     });
   }
 
-  outputTypes.forEach(type => {
-    it(`accepts an output type as an Interface field type: ${type}`, () => {
-      expect(() => schemaWithInterfaceFieldOfType(type)).not.to.throw();
+  for (const type of outputTypes) {
+    const typeName = inspect(type);
+    it(`accepts an output type as an Interface field type: ${typeName}`, () => {
+      const schema = schemaWithInterfaceFieldOfType(type);
+      expect(validateSchema(schema)).to.deep.equal([]);
     });
-  });
+  }
 
   it('rejects an empty Interface field type', () => {
-    expect(() => schemaWithInterfaceFieldOfType(undefined)).to.throw(
-      'BadInterface.badField field type must be Output Type but got: undefined.',
-    );
+    // $DisableFlowOnNegativeTest
+    const schema = schemaWithInterfaceFieldOfType(undefined);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'The type of BadInterface.badField must be Output Type but got: undefined.',
+      },
+      {
+        message:
+          'The type of BadImplementing.badField must be Output Type but got: undefined.',
+      },
+    ]);
   });
 
-  notOutputTypes.forEach(type => {
-    it(`rejects a non-output type as an Interface field type: ${type}`, () => {
-      expect(() => schemaWithInterfaceFieldOfType(type)).to.throw(
-        `BadInterface.badField field type must be Output Type but got: ${
-          type
-        }.`,
-      );
+  for (const type of notOutputTypes) {
+    const typeStr = inspect(type);
+    it(`rejects a non-output type as an Interface field type: ${typeStr}`, () => {
+      // $DisableFlowOnNegativeTest
+      const schema = schemaWithInterfaceFieldOfType(type);
+      expect(validateSchema(schema)).to.deep.equal([
+        {
+          message: `The type of BadInterface.badField must be Output Type but got: ${typeStr}.`,
+        },
+        {
+          message: `The type of BadImplementing.badField must be Output Type but got: ${typeStr}.`,
+        },
+      ]);
     });
+  }
+
+  it('rejects a non-type value as an Interface field type', () => {
+    // $DisableFlowOnNegativeTest
+    const schema = schemaWithInterfaceFieldOfType(Number);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'The type of BadInterface.badField must be Output Type but got: [function Number].',
+      },
+      {
+        message: 'Expected GraphQL named type but got: [function Number].',
+      },
+      {
+        message:
+          'The type of BadImplementing.badField must be Output Type but got: [function Number].',
+      },
+    ]);
+  });
+
+  it('rejects a non-output type as an Interface field type with locations', () => {
+    const schema = buildSchema(`
+      type Query {
+        test: SomeInterface
+      }
+
+      interface SomeInterface {
+        field: SomeInputObject
+      }
+
+      input SomeInputObject {
+        foo: String
+      }
+
+      type SomeObject implements SomeInterface {
+        field: SomeInputObject
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'The type of SomeInterface.field must be Output Type but got: SomeInputObject.',
+        locations: [{ line: 7, column: 16 }],
+      },
+      {
+        message:
+          'The type of SomeObject.field must be Output Type but got: SomeInputObject.',
+        locations: [{ line: 15, column: 16 }],
+      },
+    ]);
+  });
+
+  it('accepts an interface not implemented by at least one object', () => {
+    const schema = buildSchema(`
+      type Query {
+        test: SomeInterface
+      }
+
+      interface SomeInterface {
+        foo: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([]);
   });
 });
 
 describe('Type System: Field arguments must have input types', () => {
-  function schemaWithArgOfType(argType) {
+  function schemaWithArgOfType(argType: GraphQLInputType) {
     const BadObjectType = new GraphQLObjectType({
       name: 'BadObject',
       fields: {
@@ -1498,31 +1417,74 @@ describe('Type System: Field arguments must have input types', () => {
     });
   }
 
-  inputTypes.forEach(type => {
-    it(`accepts an input type as a field arg type: ${type}`, () => {
-      expect(() => schemaWithArgOfType(type)).not.to.throw();
+  for (const type of inputTypes) {
+    const typeName = inspect(type);
+    it(`accepts an input type as a field arg type: ${typeName}`, () => {
+      const schema = schemaWithArgOfType(type);
+      expect(validateSchema(schema)).to.deep.equal([]);
     });
-  });
+  }
 
   it('rejects an empty field arg type', () => {
-    expect(() => schemaWithArgOfType(undefined)).to.throw(
-      'BadObject.badField(badArg:) argument type must be Input Type but got: undefined.',
-    );
+    // $DisableFlowOnNegativeTest
+    const schema = schemaWithArgOfType(undefined);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'The type of BadObject.badField(badArg:) must be Input Type but got: undefined.',
+      },
+    ]);
   });
 
-  notInputTypes.forEach(type => {
-    it(`rejects a non-input type as a field arg type: ${type}`, () => {
-      expect(() => schemaWithArgOfType(type)).to.throw(
-        `BadObject.badField(badArg:) argument type must be Input Type but got: ${
-          type
-        }.`,
-      );
+  for (const type of notInputTypes) {
+    const typeStr = inspect(type);
+    it(`rejects a non-input type as a field arg type: ${typeStr}`, () => {
+      // $DisableFlowOnNegativeTest
+      const schema = schemaWithArgOfType(type);
+      expect(validateSchema(schema)).to.deep.equal([
+        {
+          message: `The type of BadObject.badField(badArg:) must be Input Type but got: ${typeStr}.`,
+        },
+      ]);
     });
+  }
+
+  it('rejects a non-type value as a field arg type', () => {
+    // $DisableFlowOnNegativeTest
+    const schema = schemaWithArgOfType(Number);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'The type of BadObject.badField(badArg:) must be Input Type but got: [function Number].',
+      },
+      {
+        message: 'Expected GraphQL named type but got: [function Number].',
+      },
+    ]);
+  });
+
+  it('rejects a non-input type as a field arg with locations', () => {
+    const schema = buildSchema(`
+      type Query {
+        test(arg: SomeObject): String
+      }
+
+      type SomeObject {
+        foo: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'The type of Query.test(arg:) must be Input Type but got: SomeObject.',
+        locations: [{ line: 3, column: 19 }],
+      },
+    ]);
   });
 });
 
 describe('Type System: Input Object fields must have input types', () => {
-  function schemaWithInputFieldOfType(inputFieldType) {
+  function schemaWithInputFieldOfType(inputFieldType: GraphQLInputType) {
     const BadInputObjectType = new GraphQLInputObjectType({
       name: 'BadInputObject',
       fields: {
@@ -1545,552 +1507,443 @@ describe('Type System: Input Object fields must have input types', () => {
     });
   }
 
-  inputTypes.forEach(type => {
-    it(`accepts an input type as an input field type: ${type}`, () => {
-      expect(() => schemaWithInputFieldOfType(type)).not.to.throw();
+  for (const type of inputTypes) {
+    const typeName = inspect(type);
+    it(`accepts an input type as an input field type: ${typeName}`, () => {
+      const schema = schemaWithInputFieldOfType(type);
+      expect(validateSchema(schema)).to.deep.equal([]);
     });
-  });
+  }
 
   it('rejects an empty input field type', () => {
-    expect(() => schemaWithInputFieldOfType(undefined)).to.throw(
-      'BadInputObject.badField field type must be Input Type but got: undefined.',
-    );
+    // $DisableFlowOnNegativeTest
+    const schema = schemaWithInputFieldOfType(undefined);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'The type of BadInputObject.badField must be Input Type but got: undefined.',
+      },
+    ]);
   });
 
-  notInputTypes.forEach(type => {
-    it(`rejects a non-input type as an input field type: ${type}`, () => {
-      expect(() => schemaWithInputFieldOfType(type)).to.throw(
-        `BadInputObject.badField field type must be Input Type but got: ${
-          type
-        }.`,
-      );
+  for (const type of notInputTypes) {
+    const typeStr = inspect(type);
+    it(`rejects a non-input type as an input field type: ${typeStr}`, () => {
+      // $DisableFlowOnNegativeTest
+      const schema = schemaWithInputFieldOfType(type);
+      expect(validateSchema(schema)).to.deep.equal([
+        {
+          message: `The type of BadInputObject.badField must be Input Type but got: ${typeStr}.`,
+        },
+      ]);
     });
-  });
-});
+  }
 
-describe('Type System: List must accept GraphQL types', () => {
-  const types = withModifiers([
-    GraphQLString,
-    SomeScalarType,
-    SomeObjectType,
-    SomeUnionType,
-    SomeInterfaceType,
-    SomeEnumType,
-    SomeInputObjectType,
-  ]);
-
-  const notTypes = [{}, String, undefined, null];
-
-  types.forEach(type => {
-    it(`accepts an type as item type of list: ${type}`, () => {
-      expect(() => new GraphQLList(type)).not.to.throw();
-    });
+  it('rejects a non-type value as an input field type', () => {
+    // $DisableFlowOnNegativeTest
+    const schema = schemaWithInputFieldOfType(Number);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'The type of BadInputObject.badField must be Input Type but got: [function Number].',
+      },
+      {
+        message: 'Expected GraphQL named type but got: [function Number].',
+      },
+    ]);
   });
 
-  notTypes.forEach(type => {
-    it(`rejects a non-type as item type of list: ${type}`, () => {
-      expect(() => new GraphQLList(type)).to.throw(
-        `Can only create List of a GraphQLType but got: ${type}.`,
-      );
-    });
-  });
-});
+  it('rejects a non-input type as an input object field with locations', () => {
+    const schema = buildSchema(`
+      type Query {
+        test(arg: SomeInputObject): String
+      }
 
-describe('Type System: NonNull must accept GraphQL types', () => {
-  const nullableTypes = [
-    GraphQLString,
-    SomeScalarType,
-    SomeObjectType,
-    SomeUnionType,
-    SomeInterfaceType,
-    SomeEnumType,
-    SomeInputObjectType,
-    new GraphQLList(GraphQLString),
-    new GraphQLList(new GraphQLNonNull(GraphQLString)),
-  ];
+      input SomeInputObject {
+        foo: SomeObject
+      }
 
-  const notNullableTypes = [
-    new GraphQLNonNull(GraphQLString),
-    {},
-    String,
-    undefined,
-    null,
-  ];
-
-  nullableTypes.forEach(type => {
-    it(`accepts an type as nullable type of non-null: ${type}`, () => {
-      expect(() => new GraphQLNonNull(type)).not.to.throw();
-    });
-  });
-
-  notNullableTypes.forEach(type => {
-    it(`rejects a non-type as nullable type of non-null: ${type}`, () => {
-      expect(() => new GraphQLNonNull(type)).to.throw(
-        `Can only create NonNull of a Nullable GraphQLType but got: ${type}.`,
-      );
-    });
+      type SomeObject {
+        bar: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'The type of SomeInputObject.foo must be Input Type but got: SomeObject.',
+        locations: [{ line: 7, column: 14 }],
+      },
+    ]);
   });
 });
 
 describe('Objects must adhere to Interface they implement', () => {
   it('accepts an Object which implements an Interface', () => {
-    expect(() => {
-      const AnotherInterface = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: {
-          field: {
-            type: GraphQLString,
-            args: {
-              input: { type: GraphQLString },
-            },
-          },
-        },
-      });
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
 
-      const AnotherObject = new GraphQLObjectType({
-        name: 'AnotherObject',
-        interfaces: [AnotherInterface],
-        fields: {
-          field: {
-            type: GraphQLString,
-            args: {
-              input: { type: GraphQLString },
-            },
-          },
-        },
-      });
+      interface AnotherInterface {
+        field(input: String): String
+      }
 
-      return schemaWithFieldType(AnotherObject);
-    }).not.to.throw();
+      type AnotherObject implements AnotherInterface {
+        field(input: String): String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([]);
   });
 
   it('accepts an Object which implements an Interface along with more fields', () => {
-    expect(() => {
-      const AnotherInterface = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: {
-          field: {
-            type: GraphQLString,
-            args: {
-              input: { type: GraphQLString },
-            },
-          },
-        },
-      });
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
 
-      const AnotherObject = new GraphQLObjectType({
-        name: 'AnotherObject',
-        interfaces: [AnotherInterface],
-        fields: {
-          field: {
-            type: GraphQLString,
-            args: {
-              input: { type: GraphQLString },
-            },
-          },
-          anotherfield: { type: GraphQLString },
-        },
-      });
+      interface AnotherInterface {
+        field(input: String): String
+      }
 
-      return schemaWithFieldType(AnotherObject);
-    }).not.to.throw();
+      type AnotherObject implements AnotherInterface {
+        field(input: String): String
+        anotherField: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([]);
   });
 
   it('accepts an Object which implements an Interface field along with additional optional arguments', () => {
-    expect(() => {
-      const AnotherInterface = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: {
-          field: {
-            type: GraphQLString,
-            args: {
-              input: { type: GraphQLString },
-            },
-          },
-        },
-      });
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
 
-      const AnotherObject = new GraphQLObjectType({
-        name: 'AnotherObject',
-        interfaces: [AnotherInterface],
-        fields: {
-          field: {
-            type: GraphQLString,
-            args: {
-              input: { type: GraphQLString },
-              anotherInput: { type: GraphQLString },
-            },
-          },
-        },
-      });
+      interface AnotherInterface {
+        field(input: String): String
+      }
 
-      return schemaWithFieldType(AnotherObject);
-    }).not.to.throw();
-  });
-
-  it('rejects an Object which implements an Interface field along with additional required arguments', () => {
-    expect(() => {
-      const AnotherInterface = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: {
-          field: {
-            type: GraphQLString,
-            args: {
-              input: { type: GraphQLString },
-            },
-          },
-        },
-      });
-
-      const AnotherObject = new GraphQLObjectType({
-        name: 'AnotherObject',
-        interfaces: [AnotherInterface],
-        fields: {
-          field: {
-            type: GraphQLString,
-            args: {
-              input: { type: GraphQLString },
-              anotherInput: { type: new GraphQLNonNull(GraphQLString) },
-            },
-          },
-        },
-      });
-
-      return schemaWithFieldType(AnotherObject);
-    }).to.throw(
-      'AnotherObject.field(anotherInput:) is of required type "String!" but ' +
-        'is not also provided by the interface AnotherInterface.field.',
-    );
+      type AnotherObject implements AnotherInterface {
+        field(input: String, anotherInput: String): String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([]);
   });
 
   it('rejects an Object missing an Interface field', () => {
-    expect(() => {
-      const AnotherInterface = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: {
-          field: {
-            type: GraphQLString,
-            args: {
-              input: { type: GraphQLString },
-            },
-          },
-        },
-      });
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
 
-      const AnotherObject = new GraphQLObjectType({
-        name: 'AnotherObject',
-        interfaces: [AnotherInterface],
-        fields: {
-          anotherfield: { type: GraphQLString },
-        },
-      });
+      interface AnotherInterface {
+        field(input: String): String
+      }
 
-      return schemaWithFieldType(AnotherObject);
-    }).to.throw(
-      '"AnotherInterface" expects field "field" but ' +
-        '"AnotherObject" does not provide it.',
-    );
+      type AnotherObject implements AnotherInterface {
+        anotherField: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Interface field AnotherInterface.field expected but AnotherObject does not provide it.',
+        locations: [{ line: 7, column: 9 }, { line: 10, column: 7 }],
+      },
+    ]);
   });
 
   it('rejects an Object with an incorrectly typed Interface field', () => {
-    expect(() => {
-      const AnotherInterface = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: {
-          field: { type: GraphQLString },
-        },
-      });
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
 
-      const AnotherObject = new GraphQLObjectType({
-        name: 'AnotherObject',
-        interfaces: [AnotherInterface],
-        fields: {
-          field: { type: SomeScalarType },
-        },
-      });
+      interface AnotherInterface {
+        field(input: String): String
+      }
 
-      return schemaWithFieldType(AnotherObject);
-    }).to.throw(
-      'AnotherInterface.field expects type "String" but ' +
-        'AnotherObject.field provides type "SomeScalar".',
-    );
+      type AnotherObject implements AnotherInterface {
+        field(input: String): Int
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Interface field AnotherInterface.field expects type String but AnotherObject.field is type Int.',
+        locations: [{ line: 7, column: 31 }, { line: 11, column: 31 }],
+      },
+    ]);
   });
 
   it('rejects an Object with a differently typed Interface field', () => {
-    expect(() => {
-      const TypeA = new GraphQLObjectType({
-        name: 'A',
-        fields: {
-          foo: { type: GraphQLString },
-        },
-      });
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
 
-      const TypeB = new GraphQLObjectType({
-        name: 'B',
-        fields: {
-          foo: { type: GraphQLString },
-        },
-      });
+      type A { foo: String }
+      type B { foo: String }
 
-      const AnotherInterface = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: {
-          field: { type: TypeA },
-        },
-      });
+      interface AnotherInterface {
+        field: A
+      }
 
-      const AnotherObject = new GraphQLObjectType({
-        name: 'AnotherObject',
-        interfaces: [AnotherInterface],
-        fields: {
-          field: { type: TypeB },
-        },
-      });
-
-      return schemaWithFieldType(AnotherObject);
-    }).to.throw(
-      'AnotherInterface.field expects type "A" but ' +
-        'AnotherObject.field provides type "B".',
-    );
+      type AnotherObject implements AnotherInterface {
+        field: B
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Interface field AnotherInterface.field expects type A but AnotherObject.field is type B.',
+        locations: [{ line: 10, column: 16 }, { line: 14, column: 16 }],
+      },
+    ]);
   });
 
   it('accepts an Object with a subtyped Interface field (interface)', () => {
-    expect(() => {
-      const AnotherInterface = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: () => ({
-          field: { type: AnotherInterface },
-        }),
-      });
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
 
-      const AnotherObject = new GraphQLObjectType({
-        name: 'AnotherObject',
-        interfaces: [AnotherInterface],
-        fields: () => ({
-          field: { type: AnotherObject },
-        }),
-      });
+      interface AnotherInterface {
+        field: AnotherInterface
+      }
 
-      return schemaWithFieldType(AnotherObject);
-    }).not.to.throw();
+      type AnotherObject implements AnotherInterface {
+        field: AnotherObject
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([]);
   });
 
   it('accepts an Object with a subtyped Interface field (union)', () => {
-    expect(() => {
-      const AnotherInterface = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: {
-          field: { type: SomeUnionType },
-        },
-      });
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
 
-      const AnotherObject = new GraphQLObjectType({
-        name: 'AnotherObject',
-        interfaces: [AnotherInterface],
-        fields: {
-          field: { type: SomeObjectType },
-        },
-      });
+      type SomeObject {
+        field: String
+      }
 
-      return schemaWithFieldType(AnotherObject);
-    }).not.to.throw();
+      union SomeUnionType = SomeObject
+
+      interface AnotherInterface {
+        field: SomeUnionType
+      }
+
+      type AnotherObject implements AnotherInterface {
+        field: SomeObject
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([]);
   });
 
   it('rejects an Object missing an Interface argument', () => {
-    expect(() => {
-      const AnotherInterface = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: {
-          field: {
-            type: GraphQLString,
-            args: {
-              input: { type: GraphQLString },
-            },
-          },
-        },
-      });
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
 
-      const AnotherObject = new GraphQLObjectType({
-        name: 'AnotherObject',
-        interfaces: [AnotherInterface],
-        fields: {
-          field: {
-            type: GraphQLString,
-          },
-        },
-      });
+      interface AnotherInterface {
+        field(input: String): String
+      }
 
-      return schemaWithFieldType(AnotherObject);
-    }).to.throw(
-      'AnotherInterface.field expects argument "input" but ' +
-        'AnotherObject.field does not provide it.',
-    );
+      type AnotherObject implements AnotherInterface {
+        field: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Interface field argument AnotherInterface.field(input:) expected but AnotherObject.field does not provide it.',
+        locations: [{ line: 7, column: 15 }, { line: 11, column: 9 }],
+      },
+    ]);
   });
 
   it('rejects an Object with an incorrectly typed Interface argument', () => {
-    expect(() => {
-      const AnotherInterface = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: {
-          field: {
-            type: GraphQLString,
-            args: {
-              input: { type: GraphQLString },
-            },
-          },
-        },
-      });
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
 
-      const AnotherObject = new GraphQLObjectType({
-        name: 'AnotherObject',
-        interfaces: [AnotherInterface],
-        fields: {
-          field: {
-            type: GraphQLString,
-            args: {
-              input: { type: SomeScalarType },
-            },
-          },
-        },
-      });
+      interface AnotherInterface {
+        field(input: String): String
+      }
 
-      return schemaWithFieldType(AnotherObject);
-    }).to.throw(
-      'AnotherInterface.field(input:) expects type "String" but ' +
-        'AnotherObject.field(input:) provides type "SomeScalar".',
-    );
+      type AnotherObject implements AnotherInterface {
+        field(input: Int): String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Interface field argument AnotherInterface.field(input:) expects type String but AnotherObject.field(input:) is type Int.',
+        locations: [{ line: 7, column: 22 }, { line: 11, column: 22 }],
+      },
+    ]);
   });
 
-  it('accepts an Object with an equivalently modified Interface field type', () => {
-    expect(() => {
-      const AnotherInterface = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: {
-          field: { type: new GraphQLNonNull(new GraphQLList(GraphQLString)) },
-        },
-      });
+  it('rejects an Object with both an incorrectly typed field and argument', () => {
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
 
-      const AnotherObject = new GraphQLObjectType({
-        name: 'AnotherObject',
-        interfaces: [AnotherInterface],
-        fields: {
-          field: { type: new GraphQLNonNull(new GraphQLList(GraphQLString)) },
-        },
-      });
+      interface AnotherInterface {
+        field(input: String): String
+      }
 
-      return schemaWithFieldType(AnotherObject);
-    }).not.to.throw();
+      type AnotherObject implements AnotherInterface {
+        field(input: Int): Int
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Interface field AnotherInterface.field expects type String but AnotherObject.field is type Int.',
+        locations: [{ line: 7, column: 31 }, { line: 11, column: 28 }],
+      },
+      {
+        message:
+          'Interface field argument AnotherInterface.field(input:) expects type String but AnotherObject.field(input:) is type Int.',
+        locations: [{ line: 7, column: 22 }, { line: 11, column: 22 }],
+      },
+    ]);
+  });
+
+  it('rejects an Object which implements an Interface field along with additional required arguments', () => {
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
+
+      interface AnotherInterface {
+        field(baseArg: String): String
+      }
+
+      type AnotherObject implements AnotherInterface {
+        field(
+          baseArg: String,
+          requiredArg: String!
+          optionalArg1: String,
+          optionalArg2: String = "",
+        ): String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Object field AnotherObject.field includes required argument requiredArg that is missing from the Interface field AnotherInterface.field.',
+        locations: [{ line: 13, column: 11 }, { line: 7, column: 9 }],
+      },
+    ]);
+  });
+
+  it('accepts an Object with an equivalently wrapped Interface field type', () => {
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
+
+      interface AnotherInterface {
+        field: [String]!
+      }
+
+      type AnotherObject implements AnotherInterface {
+        field: [String]!
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([]);
   });
 
   it('rejects an Object with a non-list Interface field list type', () => {
-    expect(() => {
-      const AnotherInterface = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: {
-          field: { type: new GraphQLList(GraphQLString) },
-        },
-      });
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
 
-      const AnotherObject = new GraphQLObjectType({
-        name: 'AnotherObject',
-        interfaces: [AnotherInterface],
-        fields: {
-          field: { type: GraphQLString },
-        },
-      });
+      interface AnotherInterface {
+        field: [String]
+      }
 
-      return schemaWithFieldType(AnotherObject);
-    }).to.throw(
-      'AnotherInterface.field expects type "[String]" but ' +
-        'AnotherObject.field provides type "String".',
-    );
+      type AnotherObject implements AnotherInterface {
+        field: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Interface field AnotherInterface.field expects type [String] but AnotherObject.field is type String.',
+        locations: [{ line: 7, column: 16 }, { line: 11, column: 16 }],
+      },
+    ]);
   });
 
   it('rejects an Object with a list Interface field non-list type', () => {
-    expect(() => {
-      const AnotherInterface = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: {
-          field: { type: GraphQLString },
-        },
-      });
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
 
-      const AnotherObject = new GraphQLObjectType({
-        name: 'AnotherObject',
-        interfaces: [AnotherInterface],
-        fields: {
-          field: { type: new GraphQLList(GraphQLString) },
-        },
-      });
+      interface AnotherInterface {
+        field: String
+      }
 
-      return schemaWithFieldType(AnotherObject);
-    }).to.throw(
-      'AnotherInterface.field expects type "String" but ' +
-        'AnotherObject.field provides type "[String]".',
-    );
+      type AnotherObject implements AnotherInterface {
+        field: [String]
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Interface field AnotherInterface.field expects type String but AnotherObject.field is type [String].',
+        locations: [{ line: 7, column: 16 }, { line: 11, column: 16 }],
+      },
+    ]);
   });
 
   it('accepts an Object with a subset non-null Interface field type', () => {
-    expect(() => {
-      const AnotherInterface = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: {
-          field: { type: GraphQLString },
-        },
-      });
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
 
-      const AnotherObject = new GraphQLObjectType({
-        name: 'AnotherObject',
-        interfaces: [AnotherInterface],
-        fields: {
-          field: { type: new GraphQLNonNull(GraphQLString) },
-        },
-      });
+      interface AnotherInterface {
+        field: String
+      }
 
-      return schemaWithFieldType(AnotherObject);
-    }).not.to.throw();
+      type AnotherObject implements AnotherInterface {
+        field: String!
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([]);
   });
 
   it('rejects an Object with a superset nullable Interface field type', () => {
-    expect(() => {
-      const AnotherInterface = new GraphQLInterfaceType({
-        name: 'AnotherInterface',
-        fields: {
-          field: { type: new GraphQLNonNull(GraphQLString) },
-        },
-      });
+    const schema = buildSchema(`
+      type Query {
+        test: AnotherObject
+      }
 
-      const AnotherObject = new GraphQLObjectType({
-        name: 'AnotherObject',
-        interfaces: [AnotherInterface],
-        fields: {
-          field: { type: GraphQLString },
-        },
-      });
+      interface AnotherInterface {
+        field: String!
+      }
 
-      return schemaWithFieldType(AnotherObject);
-    }).to.throw(
-      'AnotherInterface.field expects type "String!" but ' +
-        'AnotherObject.field provides type "String".',
-    );
-  });
-
-  it('does not allow isDeprecated without deprecationReason on field', () => {
-    expect(() => {
-      const OldObject = new GraphQLObjectType({
-        name: 'OldObject',
-        fields: {
-          field: {
-            type: GraphQLString,
-            isDeprecated: true,
-          },
-        },
-      });
-
-      return schemaWithFieldType(OldObject);
-    }).to.throw(
-      'OldObject.field should provide "deprecationReason" instead ' +
-        'of "isDeprecated".',
-    );
+      type AnotherObject implements AnotherInterface {
+        field: String
+      }
+    `);
+    expect(validateSchema(schema)).to.deep.equal([
+      {
+        message:
+          'Interface field AnotherInterface.field expects type String! but AnotherObject.field is type String.',
+        locations: [{ line: 7, column: 16 }, { line: 11, column: 16 }],
+      },
+    ]);
   });
 });

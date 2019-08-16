@@ -1,14 +1,9 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import type { ValidationContext } from '../index';
-import { GraphQLError } from '../../error';
+import { GraphQLError } from '../../error/GraphQLError';
+import { type ASTVisitor } from '../../language/visitor';
+
+import { type ASTValidationContext } from '../ValidationContext';
 
 export function duplicateOperationNameMessage(operationName: string): string {
   return `There can be only one operation named "${operationName}".`;
@@ -19,7 +14,9 @@ export function duplicateOperationNameMessage(operationName: string): string {
  *
  * A GraphQL document is only valid if all defined operations have unique names.
  */
-export function UniqueOperationNames(context: ValidationContext): any {
+export function UniqueOperationNames(
+  context: ASTValidationContext,
+): ASTVisitor {
   const knownOperationNames = Object.create(null);
   return {
     OperationDefinition(node) {

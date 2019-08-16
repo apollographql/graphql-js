@@ -1,18 +1,14 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
 // The GraphQL query recommended for a full schema introspection.
 export {
+  // Produce the GraphQL query recommended for a full schema introspection.
+  // Accepts optional IntrospectionOptions.
   getIntrospectionQuery,
-  // Deprecated, use getIntrospectionQuery()
+  // @deprecated, use getIntrospectionQuery() - will be removed in v15.
   introspectionQuery,
 } from './introspectionQuery';
+
 export type {
   IntrospectionOptions,
   IntrospectionQuery,
@@ -38,17 +34,33 @@ export type {
   IntrospectionDirective,
 } from './introspectionQuery';
 
-// Gets the target Operation from a Document
+// Gets the target Operation from a Document.
 export { getOperationAST } from './getOperationAST';
+
+// Gets the Type for the target Operation AST.
+export { getOperationRootType } from './getOperationRootType';
+
+// Convert a GraphQLSchema to an IntrospectionQuery.
+export { introspectionFromSchema } from './introspectionFromSchema';
 
 // Build a GraphQLSchema from an introspection result.
 export { buildClientSchema } from './buildClientSchema';
 
 // Build a GraphQLSchema from GraphQL Schema language.
-export { buildASTSchema, buildSchema } from './buildASTSchema';
+export {
+  buildASTSchema,
+  buildSchema,
+  // @deprecated: Get the description from a schema AST node and supports legacy
+  // syntax for specifying descriptions - will be removed in v16.
+  getDescription,
+} from './buildASTSchema';
+export type { BuildSchemaOptions } from './buildASTSchema';
 
 // Extends an existing GraphQLSchema from a parsed GraphQL Schema language AST.
 export { extendSchema } from './extendSchema';
+
+// Sort a GraphQLSchema.
+export { lexicographicSortSchema } from './lexicographicSortSchema';
 
 // Print a GraphQLSchema to GraphQL Schema language.
 export {
@@ -73,10 +85,16 @@ export { astFromValue } from './astFromValue';
 // the GraphQL type system.
 export { TypeInfo } from './TypeInfo';
 
-// Determine if JavaScript values adhere to a GraphQL type.
+// Coerces a JavaScript value to a GraphQL type, or produces errors.
+export { coerceInputValue } from './coerceInputValue';
+
+// @deprecated use coerceInputValue - will be removed in v15.
+export { coerceValue } from './coerceValue';
+
+// @deprecated use coerceInputValue - will be removed in v15.
 export { isValidJSValue } from './isValidJSValue';
 
-// Determine if AST values adhere to a GraphQL type.
+// @deprecated use validation - will be removed in v15
 export { isValidLiteralValue } from './isValidLiteralValue';
 
 // Concatenates multiple AST together.
@@ -84,6 +102,10 @@ export { concatAST } from './concatAST';
 
 // Separates an AST into an AST per Operation.
 export { separateOperations } from './separateOperations';
+
+// Strips characters that are not significant to the validity or execution
+// of a GraphQL document.
+export { stripIgnoredCharacters } from './stripIgnoredCharacters';
 
 // Comparators for types
 export {
@@ -93,7 +115,7 @@ export {
 } from './typeComparators';
 
 // Asserts that a string is a valid GraphQL name
-export { assertValidName } from './assertValidName';
+export { assertValidName, isValidNameError } from './assertValidName';
 
 // Compares two GraphQLSchemas and detects breaking changes.
 export {

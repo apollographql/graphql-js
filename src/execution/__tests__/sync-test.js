@@ -1,16 +1,19 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// @flow strict
 
 import { expect } from 'chai';
 import { describe, it } from 'mocha';
+
+import { parse } from '../../language/parser';
+
+import { validate } from '../../validation/validate';
+
+import { GraphQLSchema } from '../../type/schema';
+import { GraphQLString } from '../../type/scalars';
+import { GraphQLObjectType } from '../../type/definition';
+
 import { graphqlSync } from '../../graphql';
+
 import { execute } from '../execute';
-import { parse } from '../../language';
-import { GraphQLSchema, GraphQLObjectType, GraphQLString } from '../../type';
 
 describe('Execute: synchronously when possible', () => {
   const schema = new GraphQLSchema({
@@ -25,8 +28,19 @@ describe('Execute: synchronously when possible', () => {
         },
         asyncField: {
           type: GraphQLString,
-          async resolve(rootValue) {
-            return await rootValue;
+          resolve(rootValue) {
+            return Promise.resolve(rootValue);
+          },
+        },
+      },
+    }),
+    mutation: new GraphQLObjectType({
+      name: 'Mutation',
+      fields: {
+        syncMutationField: {
+          type: GraphQLString,
+          resolve(rootValue) {
+            return rootValue;
           },
         },
       },
@@ -41,13 +55,7 @@ describe('Execute: synchronously when possible', () => {
       rootValue: 'rootValue',
     });
     expect(result).to.deep.equal({
-      errors: [
-        {
-          message: 'Must provide an operation.',
-          locations: undefined,
-          path: undefined,
-        },
-      ],
+      errors: [{ message: 'Must provide an operation.' }],
     });
   });
 
@@ -59,6 +67,16 @@ describe('Execute: synchronously when possible', () => {
       rootValue: 'rootValue',
     });
     expect(result).to.deep.equal({ data: { syncField: 'rootValue' } });
+  });
+
+  it('does not return a Promise if mutation fields are all synchronous', () => {
+    const doc = 'mutation Example { syncMutationField }';
+    const result = execute({
+      schema,
+      document: parse(doc),
+      rootValue: 'rootValue',
+    });
+    expect(result).to.deep.equal({ data: { syncMutationField: 'rootValue' } });
   });
 
   it('returns a Promise if any field is asynchronous', async () => {
@@ -81,13 +99,10 @@ describe('Execute: synchronously when possible', () => {
         schema,
         source: doc,
       });
-      expect(result).to.containSubset({
+      expect(result).to.deep.equal({
         errors: [
           {
-            message:
-              'Syntax Error GraphQL request (1:29) Expected Name, found {\n\n' +
-              '1: fragment Example on Query { { { syncField }\n' +
-              '                               ^\n',
+            message: 'Syntax Error: Expected Name, found {',
             locations: [{ line: 1, column: 29 }],
           },
         ],
@@ -96,20 +111,12 @@ describe('Execute: synchronously when possible', () => {
 
     it('does not return a Promise for validation errors', () => {
       const doc = 'fragment Example on Query { unknownField }';
+      const validationErrors = validate(schema, parse(doc));
       const result = graphqlSync({
         schema,
         source: doc,
       });
-      expect(result).to.containSubset({
-        errors: [
-          {
-            message:
-              'Cannot query field "unknownField" on type "Query". Did you ' +
-              'mean "syncField" or "asyncField"?',
-            locations: [{ line: 1, column: 29 }],
-          },
-        ],
-      });
+      expect(result).to.deep.equal({ errors: validationErrors });
     });
 
     it('does not return a Promise for sync execution', () => {

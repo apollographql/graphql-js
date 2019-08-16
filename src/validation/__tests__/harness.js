@@ -1,16 +1,26 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// @flow strict
 
 import { expect } from 'chai';
-import { parse } from '../../language';
-import { formatError } from '../../error';
-import { validate } from '../validate';
+
+import inspect from '../../jsutils/inspect';
+
+import { parse } from '../../language/parser';
+
+import { GraphQLSchema } from '../../type/schema';
 import {
-  GraphQLSchema,
+  GraphQLDirective,
+  GraphQLIncludeDirective,
+  GraphQLSkipDirective,
+} from '../../type/directives';
+import {
+  GraphQLInt,
+  GraphQLFloat,
+  GraphQLString,
+  GraphQLBoolean,
+  GraphQLID,
+} from '../../type/scalars';
+import {
+  GraphQLScalarType,
   GraphQLObjectType,
   GraphQLInterfaceType,
   GraphQLUnionType,
@@ -18,17 +28,13 @@ import {
   GraphQLInputObjectType,
   GraphQLList,
   GraphQLNonNull,
-  GraphQLInt,
-  GraphQLFloat,
-  GraphQLString,
-  GraphQLBoolean,
-  GraphQLID,
-} from '../../type';
+} from '../../type/definition';
+
+import { validate, validateSDL } from '../validate';
 import {
-  GraphQLDirective,
-  GraphQLIncludeDirective,
-  GraphQLSkipDirective,
-} from '../../type/directives';
+  type ValidationRule,
+  type SDLValidationRule,
+} from '../ValidationContext';
 
 const Being = new GraphQLInterfaceType({
   name: 'Being',
@@ -137,8 +143,8 @@ const Human = new GraphQLObjectType({
       type: GraphQLString,
       args: { surname: { type: GraphQLBoolean } },
     },
-    pets: { type: new GraphQLList(Pet) },
-    relatives: { type: new GraphQLList(Human) },
+    pets: { type: GraphQLList(Pet) },
+    relatives: { type: GraphQLList(Human) },
     iq: { type: GraphQLInt },
   }),
 });
@@ -181,11 +187,12 @@ const FurColor = new GraphQLEnumType({
 const ComplexInput = new GraphQLInputObjectType({
   name: 'ComplexInput',
   fields: {
-    requiredField: { type: new GraphQLNonNull(GraphQLBoolean) },
+    requiredField: { type: GraphQLNonNull(GraphQLBoolean) },
+    nonNullField: { type: GraphQLNonNull(GraphQLBoolean), defaultValue: false },
     intField: { type: GraphQLInt },
     stringField: { type: GraphQLString },
     booleanField: { type: GraphQLBoolean },
-    stringListField: { type: new GraphQLList(GraphQLString) },
+    stringListField: { type: GraphQLList(GraphQLString) },
   },
 });
 
@@ -201,7 +208,7 @@ const ComplicatedArgs = new GraphQLObjectType({
     },
     nonNullIntArgField: {
       type: GraphQLString,
-      args: { nonNullIntArg: { type: new GraphQLNonNull(GraphQLInt) } },
+      args: { nonNullIntArg: { type: GraphQLNonNull(GraphQLInt) } },
     },
     stringArgField: {
       type: GraphQLString,
@@ -225,7 +232,15 @@ const ComplicatedArgs = new GraphQLObjectType({
     },
     stringListArgField: {
       type: GraphQLString,
-      args: { stringListArg: { type: new GraphQLList(GraphQLString) } },
+      args: { stringListArg: { type: GraphQLList(GraphQLString) } },
+    },
+    stringListNonNullArgField: {
+      type: GraphQLString,
+      args: {
+        stringListNonNullArg: {
+          type: GraphQLList(GraphQLNonNull(GraphQLString)),
+        },
+      },
     },
     complexArgField: {
       type: GraphQLString,
@@ -234,8 +249,14 @@ const ComplicatedArgs = new GraphQLObjectType({
     multipleReqs: {
       type: GraphQLString,
       args: {
-        req1: { type: new GraphQLNonNull(GraphQLInt) },
-        req2: { type: new GraphQLNonNull(GraphQLInt) },
+        req1: { type: GraphQLNonNull(GraphQLInt) },
+        req2: { type: GraphQLNonNull(GraphQLInt) },
+      },
+    },
+    nonNullFieldWithDefault: {
+      type: GraphQLString,
+      args: {
+        arg: { type: GraphQLNonNull(GraphQLInt), defaultValue: 0 },
       },
     },
     multipleOpts: {
@@ -254,8 +275,8 @@ const ComplicatedArgs = new GraphQLObjectType({
     multipleOptAndReq: {
       type: GraphQLString,
       args: {
-        req1: { type: new GraphQLNonNull(GraphQLInt) },
-        req2: { type: new GraphQLNonNull(GraphQLInt) },
+        req1: { type: GraphQLNonNull(GraphQLInt) },
+        req2: { type: GraphQLNonNull(GraphQLInt) },
         opt1: {
           type: GraphQLInt,
           defaultValue: 0,
@@ -268,6 +289,15 @@ const ComplicatedArgs = new GraphQLObjectType({
     },
   }),
 });
+
+const InvalidScalar = new GraphQLScalarType({
+  name: 'Invalid',
+  parseValue(value) {
+    throw new Error(`Invalid scalar is always invalid: ${inspect(value)}`);
+  },
+});
+
+const AnyScalar = new GraphQLScalarType({ name: 'Any' });
 
 const QueryRoot = new GraphQLObjectType({
   name: 'QueryRoot',
@@ -284,6 +314,18 @@ const QueryRoot = new GraphQLObjectType({
     dogOrHuman: { type: DogOrHuman },
     humanOrAlien: { type: HumanOrAlien },
     complicatedArgs: { type: ComplicatedArgs },
+    invalidArg: {
+      args: {
+        arg: { type: InvalidScalar },
+      },
+      type: GraphQLString,
+    },
+    anyArg: {
+      args: {
+        arg: { type: AnyScalar },
+      },
+      type: GraphQLString,
+    },
   }),
 });
 
@@ -322,75 +364,32 @@ export const testSchema = new GraphQLSchema({
       locations: ['INLINE_FRAGMENT'],
     }),
     new GraphQLDirective({
-      name: 'onSchema',
-      locations: ['SCHEMA'],
-    }),
-    new GraphQLDirective({
-      name: 'onScalar',
-      locations: ['SCALAR'],
-    }),
-    new GraphQLDirective({
-      name: 'onObject',
-      locations: ['OBJECT'],
-    }),
-    new GraphQLDirective({
-      name: 'onFieldDefinition',
-      locations: ['FIELD_DEFINITION'],
-    }),
-    new GraphQLDirective({
-      name: 'onArgumentDefinition',
-      locations: ['ARGUMENT_DEFINITION'],
-    }),
-    new GraphQLDirective({
-      name: 'onInterface',
-      locations: ['INTERFACE'],
-    }),
-    new GraphQLDirective({
-      name: 'onUnion',
-      locations: ['UNION'],
-    }),
-    new GraphQLDirective({
-      name: 'onEnum',
-      locations: ['ENUM'],
-    }),
-    new GraphQLDirective({
-      name: 'onEnumValue',
-      locations: ['ENUM_VALUE'],
-    }),
-    new GraphQLDirective({
-      name: 'onInputObject',
-      locations: ['INPUT_OBJECT'],
-    }),
-    new GraphQLDirective({
-      name: 'onInputFieldDefinition',
-      locations: ['INPUT_FIELD_DEFINITION'],
+      name: 'onVariableDefinition',
+      locations: ['VARIABLE_DEFINITION'],
     }),
   ],
 });
 
-function expectValid(schema, rules, queryString) {
-  const errors = validate(schema, parse(queryString), rules);
-  expect(errors).to.deep.equal([], 'Should validate');
+export function expectValidationErrorsWithSchema(
+  schema: GraphQLSchema,
+  rule: ValidationRule,
+  queryStr: string,
+) {
+  const doc = parse(queryStr);
+  const errors = validate(schema, doc, [rule]);
+  return expect(errors);
 }
 
-function expectInvalid(schema, rules, queryString, expectedErrors) {
-  const errors = validate(schema, parse(queryString), rules);
-  expect(errors).to.have.length.of.at.least(1, 'Should not validate');
-  expect(errors.map(formatError)).to.deep.equal(expectedErrors);
+export function expectValidationErrors(rule: ValidationRule, queryStr: string) {
+  return expectValidationErrorsWithSchema(testSchema, rule, queryStr);
 }
 
-export function expectPassesRule(rule, queryString) {
-  return expectValid(testSchema, [rule], queryString);
-}
-
-export function expectFailsRule(rule, queryString, errors) {
-  return expectInvalid(testSchema, [rule], queryString, errors);
-}
-
-export function expectPassesRuleWithSchema(schema, rule, queryString, errors) {
-  return expectValid(schema, [rule], queryString, errors);
-}
-
-export function expectFailsRuleWithSchema(schema, rule, queryString, errors) {
-  return expectInvalid(schema, [rule], queryString, errors);
+export function expectSDLValidationErrors(
+  schema: ?GraphQLSchema,
+  rule: SDLValidationRule,
+  sdlStr: string,
+) {
+  const doc = parse(sdlStr);
+  const errors = validateSDL(doc, schema, [rule]);
+  return expect(errors);
 }

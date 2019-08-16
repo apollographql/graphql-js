@@ -1,14 +1,9 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import type { ValidationContext } from '../index';
-import { GraphQLError } from '../../error';
+import { GraphQLError } from '../../error/GraphQLError';
+import { type ASTVisitor } from '../../language/visitor';
+
+import { type ASTValidationContext } from '../ValidationContext';
 
 export function duplicateArgMessage(argName: string): string {
   return `There can be only one argument named "${argName}".`;
@@ -20,7 +15,7 @@ export function duplicateArgMessage(argName: string): string {
  * A GraphQL field or directive is only valid if all supplied arguments are
  * uniquely named.
  */
-export function UniqueArgumentNames(context: ValidationContext): any {
+export function UniqueArgumentNames(context: ASTValidationContext): ASTVisitor {
   let knownArgNames = Object.create(null);
   return {
     Field() {

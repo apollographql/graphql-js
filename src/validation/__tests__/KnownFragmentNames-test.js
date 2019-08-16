@@ -1,30 +1,32 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// @flow strict
 
 import { describe, it } from 'mocha';
-import { expectPassesRule, expectFailsRule } from './harness';
+
 import {
   KnownFragmentNames,
   unknownFragmentMessage,
 } from '../rules/KnownFragmentNames';
 
-function undefFrag(fragName, line, column) {
+import { expectValidationErrors } from './harness';
+
+function expectErrors(queryStr) {
+  return expectValidationErrors(KnownFragmentNames, queryStr);
+}
+
+function expectValid(queryStr) {
+  expectErrors(queryStr).to.deep.equal([]);
+}
+
+function unknownFragment(fragName, line, column) {
   return {
     message: unknownFragmentMessage(fragName),
     locations: [{ line, column }],
-    path: undefined,
   };
 }
 
 describe('Validate: Known fragment names', () => {
   it('known fragment names are valid', () => {
-    expectPassesRule(
-      KnownFragmentNames,
-      `
+    expectValid(`
       {
         human(id: 4) {
           ...HumanFields1
@@ -46,14 +48,11 @@ describe('Validate: Known fragment names', () => {
       fragment HumanFields3 on Human {
         name
       }
-    `,
-    );
+    `);
   });
 
   it('unknown fragment names are invalid', () => {
-    expectFailsRule(
-      KnownFragmentNames,
-      `
+    expectErrors(`
       {
         human(id: 4) {
           ...UnknownFragment1
@@ -66,12 +65,10 @@ describe('Validate: Known fragment names', () => {
         name
         ...UnknownFragment3
       }
-    `,
-      [
-        undefFrag('UnknownFragment1', 4, 14),
-        undefFrag('UnknownFragment2', 6, 16),
-        undefFrag('UnknownFragment3', 12, 12),
-      ],
-    );
+    `).to.deep.equal([
+      unknownFragment('UnknownFragment1', 4, 14),
+      unknownFragment('UnknownFragment2', 6, 16),
+      unknownFragment('UnknownFragment3', 12, 12),
+    ]);
   });
 });

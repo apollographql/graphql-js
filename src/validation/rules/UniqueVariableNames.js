@@ -1,15 +1,11 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import type { ValidationContext } from '../index';
-import type { VariableDefinitionNode } from '../../language/ast';
-import { GraphQLError } from '../../error';
+import { GraphQLError } from '../../error/GraphQLError';
+
+import { type ASTVisitor } from '../../language/visitor';
+import { type VariableDefinitionNode } from '../../language/ast';
+
+import { type ASTValidationContext } from '../ValidationContext';
 
 export function duplicateVariableMessage(variableName: string): string {
   return `There can be only one variable named "${variableName}".`;
@@ -20,7 +16,7 @@ export function duplicateVariableMessage(variableName: string): string {
  *
  * A GraphQL operation is only valid if all its variables are uniquely named.
  */
-export function UniqueVariableNames(context: ValidationContext): any {
+export function UniqueVariableNames(context: ASTValidationContext): ASTVisitor {
   let knownVariableNames = Object.create(null);
   return {
     OperationDefinition() {

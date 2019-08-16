@@ -1,21 +1,16 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import type { ValidationContext } from '../index';
-import { GraphQLError } from '../../error';
-import type { OperationDefinitionNode } from '../../language/ast';
+import { GraphQLError } from '../../error/GraphQLError';
+
+import { type ASTVisitor } from '../../language/visitor';
+import { type OperationDefinitionNode } from '../../language/ast';
+
+import { type ASTValidationContext } from '../ValidationContext';
 
 export function singleFieldOnlyMessage(name: ?string): string {
-  return (
-    (name ? `Subscription "${name}" ` : 'Anonymous Subscription ') +
-    'must select only one top level field.'
-  );
+  return name
+    ? `Subscription "${name}" must select only one top level field.`
+    : 'Anonymous Subscription must select only one top level field.';
 }
 
 /**
@@ -23,7 +18,9 @@ export function singleFieldOnlyMessage(name: ?string): string {
  *
  * A GraphQL subscription is valid only if it contains a single root field.
  */
-export function SingleFieldSubscriptions(context: ValidationContext): any {
+export function SingleFieldSubscriptions(
+  context: ASTValidationContext,
+): ASTVisitor {
   return {
     OperationDefinition(node: OperationDefinitionNode) {
       if (node.operation === 'subscription') {

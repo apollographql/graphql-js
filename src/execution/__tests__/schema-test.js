@@ -1,28 +1,27 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// @flow strict
 
 import { expect } from 'chai';
 import { describe, it } from 'mocha';
 
-import { execute } from '../execute';
-import { parse } from '../../language';
+import { parse } from '../../language/parser';
+
+import { GraphQLSchema } from '../../type/schema';
 import {
-  GraphQLSchema,
-  GraphQLObjectType,
   GraphQLList,
   GraphQLNonNull,
+  GraphQLObjectType,
+} from '../../type/definition';
+import {
+  GraphQLID,
   GraphQLInt,
   GraphQLString,
   GraphQLBoolean,
-  GraphQLID,
-} from '../../type';
+} from '../../type/scalars';
+
+import { execute } from '../execute';
 
 describe('Execute: Handles execution with a complex schema', () => {
-  it('executes using a schema', async () => {
+  it('executes using a schema', () => {
     const BlogImage = new GraphQLObjectType({
       name: 'Image',
       fields: {
@@ -49,12 +48,12 @@ describe('Execute: Handles execution with a complex schema', () => {
     const BlogArticle = new GraphQLObjectType({
       name: 'Article',
       fields: {
-        id: { type: new GraphQLNonNull(GraphQLString) },
+        id: { type: GraphQLNonNull(GraphQLString) },
         isPublished: { type: GraphQLBoolean },
         author: { type: BlogAuthor },
         title: { type: GraphQLString },
         body: { type: GraphQLString },
-        keywords: { type: new GraphQLList(GraphQLString) },
+        keywords: { type: GraphQLList(GraphQLString) },
       },
     });
 
@@ -67,7 +66,7 @@ describe('Execute: Handles execution with a complex schema', () => {
           resolve: (_, { id }) => article(id),
         },
         feed: {
-          type: new GraphQLList(BlogArticle),
+          type: GraphQLList(BlogArticle),
           resolve: () => [
             article(1),
             article(2),
@@ -91,7 +90,7 @@ describe('Execute: Handles execution with a complex schema', () => {
     function article(id) {
       return {
         id,
-        isPublished: 'true',
+        isPublished: true,
         author: johnSmith,
         title: 'My Article ' + id,
         body: 'This is a post',
@@ -151,49 +150,19 @@ describe('Execute: Handles execution with a complex schema', () => {
 
     // Note: this is intentionally not validating to ensure appropriate
     // behavior occurs when executing an invalid query.
-    return expect(await execute(BlogSchema, parse(request))).to.deep.equal({
+    expect(execute(BlogSchema, parse(request))).to.deep.equal({
       data: {
         feed: [
-          {
-            id: '1',
-            title: 'My Article 1',
-          },
-          {
-            id: '2',
-            title: 'My Article 2',
-          },
-          {
-            id: '3',
-            title: 'My Article 3',
-          },
-          {
-            id: '4',
-            title: 'My Article 4',
-          },
-          {
-            id: '5',
-            title: 'My Article 5',
-          },
-          {
-            id: '6',
-            title: 'My Article 6',
-          },
-          {
-            id: '7',
-            title: 'My Article 7',
-          },
-          {
-            id: '8',
-            title: 'My Article 8',
-          },
-          {
-            id: '9',
-            title: 'My Article 9',
-          },
-          {
-            id: '10',
-            title: 'My Article 10',
-          },
+          { id: '1', title: 'My Article 1' },
+          { id: '2', title: 'My Article 2' },
+          { id: '3', title: 'My Article 3' },
+          { id: '4', title: 'My Article 4' },
+          { id: '5', title: 'My Article 5' },
+          { id: '6', title: 'My Article 6' },
+          { id: '7', title: 'My Article 7' },
+          { id: '8', title: 'My Article 8' },
+          { id: '9', title: 'My Article 9' },
+          { id: '10', title: 'My Article 10' },
         ],
         article: {
           id: '1',

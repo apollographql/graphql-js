@@ -1,18 +1,15 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
-
-// 80+ char lines are useful in describe/it, so ignore in this file.
-/* eslint-disable max-len */
+// @flow strict
 
 import { expect } from 'chai';
 import { describe, it } from 'mocha';
+
+import { parse } from '../../language/parser';
+
+import { GraphQLInt } from '../../type/scalars';
+import { GraphQLSchema } from '../../type/schema';
+import { GraphQLObjectType } from '../../type/definition';
+
 import { execute } from '../execute';
-import { parse } from '../../language';
-import { GraphQLSchema, GraphQLObjectType, GraphQLInt } from '../../type';
 
 class NumberHolder {
   theNumber: number;
@@ -125,28 +122,18 @@ describe('Execute: Handles mutation execution ordering', () => {
 
     const mutationResult = await execute(schema, parse(doc), new Root(6));
 
-    return expect(mutationResult).to.deep.equal({
+    expect(mutationResult).to.deep.equal({
       data: {
-        first: {
-          theNumber: 1,
-        },
-        second: {
-          theNumber: 2,
-        },
-        third: {
-          theNumber: 3,
-        },
-        fourth: {
-          theNumber: 4,
-        },
-        fifth: {
-          theNumber: 5,
-        },
+        first: { theNumber: 1 },
+        second: { theNumber: 2 },
+        third: { theNumber: 3 },
+        fourth: { theNumber: 4 },
+        fifth: { theNumber: 5 },
       },
     });
   });
 
-  it('evaluates mutations correctly in the presense of a failed mutation', async () => {
+  it('evaluates mutations correctly in the presence of a failed mutation', async () => {
     const doc = `mutation M {
       first: immediatelyChangeTheNumber(newNumber: 1) {
         theNumber
@@ -170,33 +157,27 @@ describe('Execute: Handles mutation execution ordering', () => {
 
     const result = await execute(schema, parse(doc), new Root(6));
 
-    expect(result.data).to.deep.equal({
-      first: {
-        theNumber: 1,
+    expect(result).to.deep.equal({
+      data: {
+        first: { theNumber: 1 },
+        second: { theNumber: 2 },
+        third: null,
+        fourth: { theNumber: 4 },
+        fifth: { theNumber: 5 },
+        sixth: null,
       },
-      second: {
-        theNumber: 2,
-      },
-      third: null,
-      fourth: {
-        theNumber: 4,
-      },
-      fifth: {
-        theNumber: 5,
-      },
-      sixth: null,
+      errors: [
+        {
+          message: 'Cannot change the number',
+          locations: [{ line: 8, column: 7 }],
+          path: ['third'],
+        },
+        {
+          message: 'Cannot change the number',
+          locations: [{ line: 17, column: 7 }],
+          path: ['sixth'],
+        },
+      ],
     });
-
-    expect(result.errors).to.have.length(2);
-    expect(result.errors).to.containSubset([
-      {
-        message: 'Cannot change the number',
-        locations: [{ line: 8, column: 7 }],
-      },
-      {
-        message: 'Cannot change the number',
-        locations: [{ line: 17, column: 7 }],
-      },
-    ]);
   });
 });

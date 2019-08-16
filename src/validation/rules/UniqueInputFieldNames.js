@@ -1,14 +1,9 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import type { ValidationContext } from '../index';
-import { GraphQLError } from '../../error';
+import { GraphQLError } from '../../error/GraphQLError';
+import { type ASTVisitor } from '../../language/visitor';
+
+import { type ASTValidationContext } from '../ValidationContext';
 
 export function duplicateInputFieldMessage(fieldName: string): string {
   return `There can be only one input field named "${fieldName}".`;
@@ -20,7 +15,9 @@ export function duplicateInputFieldMessage(fieldName: string): string {
  * A GraphQL input object value is only valid if all supplied fields are
  * uniquely named.
  */
-export function UniqueInputFieldNames(context: ValidationContext): any {
+export function UniqueInputFieldNames(
+  context: ASTValidationContext,
+): ASTVisitor {
   const knownNameStack = [];
   let knownNames = Object.create(null);
 
@@ -46,7 +43,6 @@ export function UniqueInputFieldNames(context: ValidationContext): any {
       } else {
         knownNames[fieldName] = node.name;
       }
-      return false;
     },
   };
 }

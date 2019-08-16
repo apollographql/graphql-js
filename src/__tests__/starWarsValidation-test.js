@@ -1,18 +1,14 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
 import { expect } from 'chai';
 import { describe, it } from 'mocha';
-import { StarWarsSchema } from './starWarsSchema.js';
-import { Source } from '../language/source';
+
 import { parse } from '../language/parser';
+import { Source } from '../language/source';
+
 import { validate } from '../validation/validate';
+
+import { StarWarsSchema } from './starWarsSchema';
 
 /**
  * Helper function to test a query and the expected response.

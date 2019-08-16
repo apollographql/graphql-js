@@ -1,16 +1,9 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
 /**
  * The set of allowed directive location values.
  */
-export const DirectiveLocation = {
+export const DirectiveLocation = Object.freeze({
   // Request Definitions
   QUERY: 'QUERY',
   MUTATION: 'MUTATION',
@@ -19,6 +12,7 @@ export const DirectiveLocation = {
   FRAGMENT_DEFINITION: 'FRAGMENT_DEFINITION',
   FRAGMENT_SPREAD: 'FRAGMENT_SPREAD',
   INLINE_FRAGMENT: 'INLINE_FRAGMENT',
+  VARIABLE_DEFINITION: 'VARIABLE_DEFINITION',
   // Type System Definitions
   SCHEMA: 'SCHEMA',
   SCALAR: 'SCALAR',
@@ -31,9 +25,9 @@ export const DirectiveLocation = {
   ENUM_VALUE: 'ENUM_VALUE',
   INPUT_OBJECT: 'INPUT_OBJECT',
   INPUT_FIELD_DEFINITION: 'INPUT_FIELD_DEFINITION',
-};
+});
 
 /**
  * The enum type representing the directive location values.
  */
-export type DirectiveLocationEnum = $Keys<typeof DirectiveLocation>;
+export type DirectiveLocationEnum = $Values<typeof DirectiveLocation>;

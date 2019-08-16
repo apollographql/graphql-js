@@ -1,39 +1,36 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import type { ValidationContext } from '../index';
-import { GraphQLError } from '../../error';
+import didYouMean from '../../jsutils/didYouMean';
 import suggestionList from '../../jsutils/suggestionList';
-import quotedOrList from '../../jsutils/quotedOrList';
-import type { FieldNode } from '../../language/ast';
-import type { GraphQLSchema } from '../../type/schema';
-import type { GraphQLOutputType } from '../../type/definition';
+
+import { GraphQLError } from '../../error/GraphQLError';
+
+import { type FieldNode } from '../../language/ast';
+import { type ASTVisitor } from '../../language/visitor';
+
+import { type GraphQLSchema } from '../../type/schema';
 import {
-  GraphQLObjectType,
-  GraphQLInterfaceType,
+  type GraphQLOutputType,
+  isObjectType,
+  isInterfaceType,
   isAbstractType,
 } from '../../type/definition';
+
+import { type ValidationContext } from '../ValidationContext';
 
 export function undefinedFieldMessage(
   fieldName: string,
   type: string,
-  suggestedTypeNames: Array<string>,
-  suggestedFieldNames: Array<string>,
+  suggestedTypeNames: $ReadOnlyArray<string>,
+  suggestedFieldNames: $ReadOnlyArray<string>,
 ): string {
-  let message = `Cannot query field "${fieldName}" on type "${type}".`;
-  if (suggestedTypeNames.length !== 0) {
-    const suggestions = quotedOrList(suggestedTypeNames);
-    message += ` Did you mean to use an inline fragment on ${suggestions}?`;
-  } else if (suggestedFieldNames.length !== 0) {
-    message += ` Did you mean ${quotedOrList(suggestedFieldNames)}?`;
-  }
-  return message;
+  const quotedTypeNames = suggestedTypeNames.map(x => `"${x}"`);
+  const quotedFieldNames = suggestedFieldNames.map(x => `"${x}"`);
+  return (
+    `Cannot query field "${fieldName}" on type "${type}".` +
+    (didYouMean('to use an inline fragment on', quotedTypeNames) ||
+      didYouMean(quotedFieldNames))
+  );
 }
 
 /**
@@ -42,7 +39,7 @@ export function undefinedFieldMessage(
  * A GraphQL document is only valid if all fields selected are defined by the
  * parent type, or are an allowed meta field such as __typename.
  */
-export function FieldsOnCorrectType(context: ValidationContext): any {
+export function FieldsOnCorrectType(context: ValidationContext): ASTVisitor {
   return {
     Field(node: FieldNode) {
       const type = context.getParentType();
@@ -73,7 +70,7 @@ export function FieldsOnCorrectType(context: ValidationContext): any {
                 suggestedTypeNames,
                 suggestedFieldNames,
               ),
-              [node],
+              node,
             ),
           );
         }
@@ -83,10 +80,9 @@ export function FieldsOnCorrectType(context: ValidationContext): any {
 }
 
 /**
- * Go through all of the implementations of type, as well as the interfaces
- * that they implement. If any of those types include the provided field,
- * suggest them, sorted by how often the type is referenced,  starting
- * with Interfaces.
+ * Go through all of the implementations of type, as well as the interfaces that
+ * they implement. If any of those types include the provided field, suggest
+ * them, sorted by how often the type is referenced, starting with Interfaces.
  */
 function getSuggestedTypeNames(
   schema: GraphQLSchema,
@@ -96,21 +92,21 @@ function getSuggestedTypeNames(
   if (isAbstractType(type)) {
     const suggestedObjectTypes = [];
     const interfaceUsageCount = Object.create(null);
-    schema.getPossibleTypes(type).forEach(possibleType => {
+    for (const possibleType of schema.getPossibleTypes(type)) {
       if (!possibleType.getFields()[fieldName]) {
-        return;
+        continue;
       }
       // This object type defines this field.
       suggestedObjectTypes.push(possibleType.name);
-      possibleType.getInterfaces().forEach(possibleInterface => {
+      for (const possibleInterface of possibleType.getInterfaces()) {
         if (!possibleInterface.getFields()[fieldName]) {
-          return;
+          continue;
         }
         // This interface type defines this field.
         interfaceUsageCount[possibleInterface.name] =
           (interfaceUsageCount[possibleInterface.name] || 0) + 1;
-      });
-    });
+      }
+    }
 
     // Suggest interface types based on how common they are.
     const suggestedInterfaceTypes = Object.keys(interfaceUsageCount).sort(
@@ -134,10 +130,7 @@ function getSuggestedFieldNames(
   type: GraphQLOutputType,
   fieldName: string,
 ): Array<string> {
-  if (
-    type instanceof GraphQLObjectType ||
-    type instanceof GraphQLInterfaceType
-  ) {
+  if (isObjectType(type) || isInterfaceType(type)) {
     const possibleFieldNames = Object.keys(type.getFields());
     return suggestionList(fieldName, possibleFieldNames);
   }

@@ -1,37 +1,51 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
+import flatMap from '../polyfills/flatMap';
+import objectValues from '../polyfills/objectValues';
+
+import inspect from '../jsutils/inspect';
 import invariant from '../jsutils/invariant';
-import isNullish from '../jsutils/isNullish';
-import isInvalid from '../jsutils/isInvalid';
-import { astFromValue } from '../utilities/astFromValue';
+
 import { print } from '../language/printer';
-import type { GraphQLSchema } from '../type/schema';
-import type { GraphQLType, GraphQLNamedType } from '../type/definition';
-import {
-  GraphQLScalarType,
-  GraphQLObjectType,
-  GraphQLInterfaceType,
-  GraphQLUnionType,
-  GraphQLEnumType,
-  GraphQLInputObjectType,
-} from '../type/definition';
+import { printBlockString } from '../language/blockString';
+
+import { type GraphQLSchema } from '../type/schema';
+import { isIntrospectionType } from '../type/introspection';
 import { GraphQLString, isSpecifiedScalarType } from '../type/scalars';
 import {
   GraphQLDirective,
   DEFAULT_DEPRECATION_REASON,
   isSpecifiedDirective,
 } from '../type/directives';
+import {
+  type GraphQLNamedType,
+  type GraphQLScalarType,
+  type GraphQLEnumType,
+  type GraphQLObjectType,
+  type GraphQLInterfaceType,
+  type GraphQLUnionType,
+  type GraphQLInputObjectType,
+  isScalarType,
+  isObjectType,
+  isInterfaceType,
+  isUnionType,
+  isEnumType,
+  isInputObjectType,
+} from '../type/definition';
 
-import { isIntrospectionType } from '../type/introspection';
+import { astFromValue } from '../utilities/astFromValue';
 
-type Options = {| commentDescriptions?: boolean |};
+type Options = {|
+  /**
+   * Descriptions are defined as preceding string literals, however an older
+   * experimental version of the SDL supported preceding comments as
+   * descriptions. Set to true to enable this deprecated behavior.
+   * This option is provided to ease adoption and will be removed in v16.
+   *
+   * Default: false
+   */
+  commentDescriptions?: boolean,
+|};
 
 /**
  * Accepts options as a second argument:
@@ -73,9 +87,8 @@ function printFilteredSchema(
 ): string {
   const directives = schema.getDirectives().filter(directiveFilter);
   const typeMap = schema.getTypeMap();
-  const types = Object.keys(typeMap)
-    .sort((name1, name2) => name1.localeCompare(name2))
-    .map(typeName => typeMap[typeName])
+  const types = objectValues(typeMap)
+    .sort((type1, type2) => type1.name.localeCompare(type2.name))
     .filter(typeFilter);
 
   return (
@@ -145,20 +158,23 @@ function isSchemaOfCommonNames(schema: GraphQLSchema): boolean {
   return true;
 }
 
-export function printType(type: GraphQLType, options?: Options): string {
-  if (type instanceof GraphQLScalarType) {
+export function printType(type: GraphQLNamedType, options?: Options): string {
+  if (isScalarType(type)) {
     return printScalar(type, options);
-  } else if (type instanceof GraphQLObjectType) {
+  } else if (isObjectType(type)) {
     return printObject(type, options);
-  } else if (type instanceof GraphQLInterfaceType) {
+  } else if (isInterfaceType(type)) {
     return printInterface(type, options);
-  } else if (type instanceof GraphQLUnionType) {
+  } else if (isUnionType(type)) {
     return printUnion(type, options);
-  } else if (type instanceof GraphQLEnumType) {
+  } else if (isEnumType(type)) {
     return printEnum(type, options);
+  } else if (isInputObjectType(type)) {
+    return printInputObject(type, options);
   }
-  invariant(type instanceof GraphQLInputObjectType);
-  return printInputObject(type, options);
+
+  // Not reachable. All possible types have been considered.
+  invariant(false, 'Unexpected type: ' + inspect((type: empty)));
 }
 
 function printScalar(type: GraphQLScalarType<any>, options): string {
@@ -168,88 +184,71 @@ function printScalar(type: GraphQLScalarType<any>, options): string {
 function printObject(type: GraphQLObjectType, options): string {
   const interfaces = type.getInterfaces();
   const implementedInterfaces = interfaces.length
-    ? ' implements ' + interfaces.map(i => i.name).join(', ')
+    ? ' implements ' + interfaces.map(i => i.name).join(' & ')
     : '';
   return (
     printDescription(options, type) +
-    `type ${type.name}${implementedInterfaces} {\n` +
-    printFields(options, type) +
-    '\n' +
-    '}'
+    `type ${type.name}${implementedInterfaces}` +
+    printFields(options, type)
   );
 }
 
 function printInterface(type: GraphQLInterfaceType, options): string {
   return (
     printDescription(options, type) +
-    `interface ${type.name} {\n` +
-    printFields(options, type) +
-    '\n' +
-    '}'
+    `interface ${type.name}` +
+    printFields(options, type)
   );
 }
 
 function printUnion(type: GraphQLUnionType, options): string {
-  return (
-    printDescription(options, type) +
-    `union ${type.name} = ${type.getTypes().join(' | ')}`
-  );
+  const types = type.getTypes();
+  const possibleTypes = types.length ? ' = ' + types.join(' | ') : '';
+  return printDescription(options, type) + 'union ' + type.name + possibleTypes;
 }
 
 function printEnum(type: GraphQLEnumType, options): string {
-  return (
-    printDescription(options, type) +
-    `enum ${type.name} {\n` +
-    printEnumValues(type.getValues(), options) +
-    '\n' +
-    '}'
-  );
-}
-
-function printEnumValues(values, options): string {
-  return values
+  const values = type
+    .getValues()
     .map(
       (value, i) =>
         printDescription(options, value, '  ', !i) +
         '  ' +
         value.name +
         printDeprecated(value),
-    )
-    .join('\n');
+    );
+
+  return (
+    printDescription(options, type) + `enum ${type.name}` + printBlock(values)
+  );
 }
 
 function printInputObject(type: GraphQLInputObjectType, options): string {
-  const fieldMap = type.getFields();
-  const fields = Object.keys(fieldMap).map(fieldName => fieldMap[fieldName]);
+  const fields = objectValues(type.getFields()).map(
+    (f, i) =>
+      printDescription(options, f, '  ', !i) + '  ' + printInputValue(f),
+  );
   return (
-    printDescription(options, type) +
-    `input ${type.name} {\n` +
-    fields
-      .map(
-        (f, i) =>
-          printDescription(options, f, '  ', !i) + '  ' + printInputValue(f),
-      )
-      .join('\n') +
-    '\n' +
-    '}'
+    printDescription(options, type) + `input ${type.name}` + printBlock(fields)
   );
 }
 
 function printFields(options, type) {
-  const fieldMap = type.getFields();
-  const fields = Object.keys(fieldMap).map(fieldName => fieldMap[fieldName]);
-  return fields
-    .map(
-      (f, i) =>
-        printDescription(options, f, '  ', !i) +
-        '  ' +
-        f.name +
-        printArgs(options, f.args, '  ') +
-        ': ' +
-        String(f.type) +
-        printDeprecated(f),
-    )
-    .join('\n');
+  const fields = objectValues(type.getFields()).map(
+    (f, i) =>
+      printDescription(options, f, '  ', !i) +
+      '  ' +
+      f.name +
+      printArgs(options, f.args, '  ') +
+      ': ' +
+      String(f.type) +
+      printDeprecated(f),
+  );
+  return printBlock(fields);
+}
+
+function printBlock(items) {
+  return items.length !== 0 ? ' {\n' + items.join('\n') + '\n}' : '';
 }
 
 function printArgs(options, args, indentation = '') {
@@ -280,9 +279,10 @@ function printArgs(options, args, indentation = '') {
 }
 
 function printInputValue(arg) {
+  const defaultAST = astFromValue(arg.defaultValue, arg.type);
   let argDecl = arg.name + ': ' + String(arg.type);
-  if (!isInvalid(arg.defaultValue)) {
-    argDecl += ` = ${print(astFromValue(arg.defaultValue, arg.type))}`;
+  if (defaultAST) {
+    argDecl += ` = ${print(defaultAST)}`;
   }
   return argDecl;
 }
@@ -293,6 +293,7 @@ function printDirective(directive, options) {
     'directive @' +
     directive.name +
     printArgs(options, directive.args) +
+    (directive.isRepeatable ? ' repeatable' : '') +
     ' on ' +
     directive.locations.join(' | ')
   );
@@ -303,16 +304,11 @@ function printDeprecated(fieldOrEnumVal) {
     return '';
   }
   const reason = fieldOrEnumVal.deprecationReason;
-  if (
-    isNullish(reason) ||
-    reason === '' ||
-    reason === DEFAULT_DEPRECATION_REASON
-  ) {
-    return ' @deprecated';
+  const reasonAST = astFromValue(reason, GraphQLString);
+  if (reasonAST && reason !== '' && reason !== DEFAULT_DEPRECATION_REASON) {
+    return ' @deprecated(reason: ' + print(reasonAST) + ')';
   }
-  return (
-    ' @deprecated(reason: ' + print(astFromValue(reason, GraphQLString)) + ')'
-  );
+  return ' @deprecated';
 }
 
 function printDescription(
@@ -330,58 +326,40 @@ function printDescription(
     return printDescriptionWithComments(lines, indentation, firstInBlock);
   }
 
-  let description = indentation && !firstInBlock ? '\n' : '';
-  if (lines.length === 1 && lines[0].length < 70) {
-    description += indentation + '"""' + escapeQuote(lines[0]) + '"""\n';
-    return description;
-  }
+  const text = lines.join('\n');
+  const preferMultipleLines = text.length > 70;
+  const blockString = printBlockString(text, '', preferMultipleLines);
+  const prefix =
+    indentation && !firstInBlock ? '\n' + indentation : indentation;
 
-  description += indentation + '"""\n';
-  for (let i = 0; i < lines.length; i++) {
-    description += indentation + escapeQuote(lines[i]) + '\n';
-  }
-  description += indentation + '"""\n';
-  return description;
-}
-
-function escapeQuote(line) {
-  return line.replace(/"""/g, '\\"""');
+  return prefix + blockString.replace(/\n/g, '\n' + indentation) + '\n';
 }
 
 function printDescriptionWithComments(lines, indentation, firstInBlock) {
   let description = indentation && !firstInBlock ? '\n' : '';
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i] === '') {
+  for (const line of lines) {
+    if (line === '') {
       description += indentation + '#\n';
     } else {
-      description += indentation + '# ' + lines[i] + '\n';
+      description += indentation + '# ' + line + '\n';
     }
   }
   return description;
 }
 
 function descriptionLines(description: string, maxLen: number): Array<string> {
-  const lines = [];
   const rawLines = description.split('\n');
-  for (let i = 0; i < rawLines.length; i++) {
-    if (rawLines[i] === '') {
-      lines.push(rawLines[i]);
-    } else {
-      // For > 120 character long lines, cut at space boundaries into sublines
-      // of ~80 chars.
-      const sublines = breakLine(rawLines[i], maxLen);
-      for (let j = 0; j < sublines.length; j++) {
-        lines.push(sublines[j]);
-      }
+  return flatMap(rawLines, line => {
+    if (line.length < maxLen + 5) {
+      return line;
     }
-  }
-  return lines;
+    // For > 120 character long lines, cut at space boundaries into sublines
+    // of ~80 chars.
+    return breakLine(line, maxLen);
+  });
 }
 
 function breakLine(line: string, maxLen: number): Array<string> {
-  if (line.length < maxLen + 5) {
-    return [line];
-  }
   const parts = line.split(new RegExp(`((?: |^).{15,${maxLen - 40}}(?= |$))`));
   if (parts.length < 4) {
     return [line];

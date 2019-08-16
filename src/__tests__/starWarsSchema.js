@@ -1,23 +1,16 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
+import { GraphQLSchema } from '../type/schema';
+import { GraphQLString } from '../type/scalars';
 import {
+  GraphQLList,
+  GraphQLNonNull,
   GraphQLEnumType,
   GraphQLInterfaceType,
   GraphQLObjectType,
-  GraphQLList,
-  GraphQLNonNull,
-  GraphQLSchema,
-  GraphQLString,
-} from '../type';
+} from '../type/definition';
 
-import { getFriends, getHero, getHuman, getDroid } from './starWarsData.js';
+import { getFriends, getHero, getHuman, getDroid } from './starWarsData';
 
 /**
  * This is designed to be an end-to-end test, demonstrating
@@ -110,7 +103,7 @@ const characterInterface = new GraphQLInterfaceType({
   description: 'A character in the Star Wars Trilogy',
   fields: () => ({
     id: {
-      type: new GraphQLNonNull(GraphQLString),
+      type: GraphQLNonNull(GraphQLString),
       description: 'The id of the character.',
     },
     name: {
@@ -118,13 +111,12 @@ const characterInterface = new GraphQLInterfaceType({
       description: 'The name of the character.',
     },
     friends: {
-      type: new GraphQLList(characterInterface),
+      type: GraphQLList(characterInterface),
       description:
-        'The friends of the character, or an empty list if they ' +
-        'have none.',
+        'The friends of the character, or an empty list if they have none.',
     },
     appearsIn: {
-      type: new GraphQLList(episodeEnum),
+      type: GraphQLList(episodeEnum),
       description: 'Which movies they appear in.',
     },
     secretBackstory: {
@@ -159,7 +151,7 @@ const humanType = new GraphQLObjectType({
   description: 'A humanoid creature in the Star Wars universe.',
   fields: () => ({
     id: {
-      type: new GraphQLNonNull(GraphQLString),
+      type: GraphQLNonNull(GraphQLString),
       description: 'The id of the human.',
     },
     name: {
@@ -167,13 +159,13 @@ const humanType = new GraphQLObjectType({
       description: 'The name of the human.',
     },
     friends: {
-      type: new GraphQLList(characterInterface),
+      type: GraphQLList(characterInterface),
       description:
         'The friends of the human, or an empty list if they have none.',
       resolve: human => getFriends(human),
     },
     appearsIn: {
-      type: new GraphQLList(episodeEnum),
+      type: GraphQLList(episodeEnum),
       description: 'Which movies they appear in.',
     },
     homePlanet: {
@@ -209,7 +201,7 @@ const droidType = new GraphQLObjectType({
   description: 'A mechanical creature in the Star Wars universe.',
   fields: () => ({
     id: {
-      type: new GraphQLNonNull(GraphQLString),
+      type: GraphQLNonNull(GraphQLString),
       description: 'The id of the droid.',
     },
     name: {
@@ -217,13 +209,13 @@ const droidType = new GraphQLObjectType({
       description: 'The name of the droid.',
     },
     friends: {
-      type: new GraphQLList(characterInterface),
+      type: GraphQLList(characterInterface),
       description:
         'The friends of the droid, or an empty list if they have none.',
       resolve: droid => getFriends(droid),
     },
     appearsIn: {
-      type: new GraphQLList(episodeEnum),
+      type: GraphQLList(episodeEnum),
       description: 'Which movies they appear in.',
     },
     secretBackstory: {
@@ -263,8 +255,7 @@ const queryType = new GraphQLObjectType({
       args: {
         episode: {
           description:
-            'If omitted, returns the hero of the whole saga. If ' +
-            'provided, returns the hero of that particular episode.',
+            'If omitted, returns the hero of the whole saga. If provided, returns the hero of that particular episode.',
           type: episodeEnum,
         },
       },
@@ -275,7 +266,7 @@ const queryType = new GraphQLObjectType({
       args: {
         id: {
           description: 'id of the human',
-          type: new GraphQLNonNull(GraphQLString),
+          type: GraphQLNonNull(GraphQLString),
         },
       },
       resolve: (root, { id }) => getHuman(id),
@@ -285,7 +276,7 @@ const queryType = new GraphQLObjectType({
       args: {
         id: {
           description: 'id of the droid',
-          type: new GraphQLNonNull(GraphQLString),
+          type: GraphQLNonNull(GraphQLString),
         },
       },
       resolve: (root, { id }) => getDroid(id),

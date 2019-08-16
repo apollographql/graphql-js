@@ -1,15 +1,12 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
+
+import { type ObjMap } from '../jsutils/ObjMap';
 
 import { visit } from '../language/visitor';
-import type { ObjMap } from '../jsutils/ObjMap';
-import type { DocumentNode, OperationDefinitionNode } from '../language/ast';
+import {
+  type DocumentNode,
+  type OperationDefinitionNode,
+} from '../language/ast';
 
 /**
  * separateOperations accepts a single AST document which may contain many
@@ -50,7 +47,7 @@ export function separateOperations(
   // For each operation, produce a new synthesized AST which includes only what
   // is necessary for completing that operation.
   const separatedDocumentASTs = Object.create(null);
-  operations.forEach(operation => {
+  for (const operation of operations) {
     const operationName = opName(operation);
     const dependencies = Object.create(null);
     collectTransitiveDependencies(dependencies, depGraph, operationName);
@@ -58,9 +55,9 @@ export function separateOperations(
     // The list of definition nodes to be included for this operation, sorted
     // to retain the same order as the original document.
     const definitions = [operation];
-    Object.keys(dependencies).forEach(name => {
+    for (const name of Object.keys(dependencies)) {
       definitions.push(fragments[name]);
-    });
+    }
     definitions.sort(
       (n1, n2) => (positions.get(n1) || 0) - (positions.get(n2) || 0),
     );
@@ -69,7 +66,7 @@ export function separateOperations(
       kind: 'Document',
       definitions,
     };
-  });
+  }
 
   return separatedDocumentASTs;
 }
@@ -90,11 +87,11 @@ function collectTransitiveDependencies(
 ): void {
   const immediateDeps = depGraph[fromName];
   if (immediateDeps) {
-    Object.keys(immediateDeps).forEach(toName => {
+    for (const toName of Object.keys(immediateDeps)) {
       if (!collected[toName]) {
         collected[toName] = true;
         collectTransitiveDependencies(collected, depGraph, toName);
       }
-    });
+    }
   }
 }

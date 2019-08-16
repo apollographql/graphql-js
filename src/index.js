@@ -1,11 +1,4 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
 /**
  * GraphQL.js provides a reference implementation for the GraphQL specification
@@ -31,14 +24,18 @@
  *     import { parse } from 'graphql/language';
  */
 
+// The GraphQL.js version info.
+export { version, versionInfo } from './version';
+
 // The primary entry point into fulfilling a GraphQL request.
 export type { GraphQLArgs } from './graphql';
 export { graphql, graphqlSync } from './graphql';
 
 // Create and operate on GraphQL type definitions and schema.
 export {
-  GraphQLSchema,
   // Definitions
+  GraphQLSchema,
+  GraphQLDirective,
   GraphQLScalarType,
   GraphQLObjectType,
   GraphQLInterfaceType,
@@ -47,10 +44,7 @@ export {
   GraphQLInputObjectType,
   GraphQLList,
   GraphQLNonNull,
-  GraphQLDirective,
-  // "Enum" of Type Kinds
-  TypeKind,
-  // Scalars
+  // Standard GraphQL Scalars
   specifiedScalarTypes,
   GraphQLInt,
   GraphQLFloat,
@@ -62,12 +56,10 @@ export {
   GraphQLIncludeDirective,
   GraphQLSkipDirective,
   GraphQLDeprecatedDirective,
+  // "Enum" of Type Kinds
+  TypeKind,
   // Constant Deprecation Reason
   DEFAULT_DEPRECATION_REASON,
-  // Meta-field definitions.
-  SchemaMetaFieldDef,
-  TypeMetaFieldDef,
-  TypeNameMetaFieldDef,
   // GraphQL Types for introspection.
   introspectionTypes,
   __Schema,
@@ -78,28 +70,61 @@ export {
   __InputValue,
   __EnumValue,
   __TypeKind,
+  // Meta-field definitions.
+  SchemaMetaFieldDef,
+  TypeMetaFieldDef,
+  TypeNameMetaFieldDef,
   // Predicates
+  isSchema,
+  isDirective,
   isType,
+  isScalarType,
+  isObjectType,
+  isInterfaceType,
+  isUnionType,
+  isEnumType,
+  isInputObjectType,
+  isListType,
+  isNonNullType,
   isInputType,
   isOutputType,
   isLeafType,
   isCompositeType,
   isAbstractType,
+  isWrappingType,
+  isNullableType,
   isNamedType,
+  isRequiredArgument,
+  isRequiredInputField,
   isSpecifiedScalarType,
   isIntrospectionType,
   isSpecifiedDirective,
   // Assertions
+  assertSchema,
+  assertDirective,
   assertType,
+  assertScalarType,
+  assertObjectType,
+  assertInterfaceType,
+  assertUnionType,
+  assertEnumType,
+  assertInputObjectType,
+  assertListType,
+  assertNonNullType,
   assertInputType,
   assertOutputType,
   assertLeafType,
   assertCompositeType,
   assertAbstractType,
+  assertWrappingType,
+  assertNullableType,
   assertNamedType,
   // Un-modifiers
   getNullableType,
   getNamedType,
+  // Validate GraphQL schema.
+  validateSchema,
+  assertValidSchema,
 } from './type';
 
 export type {
@@ -109,9 +134,12 @@ export type {
   GraphQLLeafType,
   GraphQLCompositeType,
   GraphQLAbstractType,
+  GraphQLWrappingType,
   GraphQLNullableType,
   GraphQLNamedType,
   Thunk,
+  GraphQLSchemaConfig,
+  GraphQLDirectiveConfig,
   GraphQLArgument,
   GraphQLArgumentConfig,
   GraphQLEnumTypeConfig,
@@ -137,12 +165,21 @@ export type {
   GraphQLScalarTypeConfig,
   GraphQLTypeResolver,
   GraphQLUnionTypeConfig,
+  GraphQLScalarSerializer,
+  GraphQLScalarValueParser,
+  GraphQLScalarLiteralParser,
 } from './type';
 
 // Parse and operate on GraphQL language source files.
 export {
   Source,
   getLocation,
+  // Print source location
+  printLocation,
+  printSourceLocation,
+  // Lex
+  createLexer,
+  TokenKind,
   // Parse
   parse,
   parseValue,
@@ -154,22 +191,43 @@ export {
   visitInParallel,
   visitWithTypeInfo,
   getVisitFn,
-  Kind,
-  TokenKind,
-  DirectiveLocation,
   BREAK,
+  Kind,
+  DirectiveLocation,
+  // Predicates
+  isDefinitionNode,
+  isExecutableDefinitionNode,
+  isSelectionNode,
+  isValueNode,
+  isTypeNode,
+  isTypeSystemDefinitionNode,
+  isTypeDefinitionNode,
+  isTypeSystemExtensionNode,
+  isTypeExtensionNode,
 } from './language';
 
 export type {
   Lexer,
   ParseOptions,
-  // AST nodes
+  SourceLocation,
   Location,
   Token,
+  TokenKindEnum,
+  KindEnum,
+  DirectiveLocationEnum,
+  // Visitor utilities
+  ASTVisitor,
+  Visitor,
+  VisitFn,
+  VisitorKeyMap,
+  // AST nodes
   ASTNode,
+  ASTKindToNode,
+  // Each kind of AST node
   NameNode,
   DocumentNode,
   DefinitionNode,
+  ExecutableDefinitionNode,
   OperationDefinitionNode,
   OperationTypeNode,
   VariableDefinitionNode,
@@ -209,16 +267,23 @@ export type {
   EnumTypeDefinitionNode,
   EnumValueDefinitionNode,
   InputObjectTypeDefinitionNode,
-  TypeExtensionNode,
-  ObjectTypeExtensionNode,
   DirectiveDefinitionNode,
-  DirectiveLocationEnum,
+  TypeSystemExtensionNode,
+  SchemaExtensionNode,
+  TypeExtensionNode,
+  ScalarTypeExtensionNode,
+  ObjectTypeExtensionNode,
+  InterfaceTypeExtensionNode,
+  UnionTypeExtensionNode,
+  EnumTypeExtensionNode,
+  InputObjectTypeExtensionNode,
 } from './language';
 
 // Execute GraphQL queries.
 export {
   execute,
   defaultFieldResolver,
+  defaultTypeResolver,
   responsePathAsArray,
   getDirectiveValues,
 } from './execution';
@@ -226,16 +291,15 @@ export {
 export type { ExecutionArgs, ExecutionResult } from './execution';
 
 export { subscribe, createSourceEventStream } from './subscription';
+export type { SubscriptionArgs } from './subscription';
 
-// Validate GraphQL queries.
+// Validate GraphQL documents.
 export {
   validate,
   ValidationContext,
   // All validation rules in the GraphQL Specification.
   specifiedRules,
   // Individual validation rules.
-  ArgumentsOfCorrectTypeRule,
-  DefaultValuesOfCorrectTypeRule,
   FieldsOnCorrectTypeRule,
   FragmentsOnCompositeTypesRule,
   KnownArgumentNamesRule,
@@ -249,7 +313,7 @@ export {
   NoUnusedVariablesRule,
   OverlappingFieldsCanBeMergedRule,
   PossibleFragmentSpreadsRule,
-  ProvidedNonNullArgumentsRule,
+  ProvidedRequiredArgumentsRule,
   ScalarLeafsRule,
   SingleFieldSubscriptionsRule,
   UniqueArgumentNamesRule,
@@ -258,40 +322,58 @@ export {
   UniqueInputFieldNamesRule,
   UniqueOperationNamesRule,
   UniqueVariableNamesRule,
+  ValuesOfCorrectTypeRule,
   VariablesAreInputTypesRule,
   VariablesInAllowedPositionRule,
 } from './validation';
 
-// Create and format GraphQL errors.
-export { GraphQLError, formatError } from './error';
+export type { ValidationRule } from './validation';
 
-export type { GraphQLFormattedError, GraphQLErrorLocation } from './error';
+// Create, format, and print GraphQL errors.
+export {
+  GraphQLError,
+  syntaxError,
+  locatedError,
+  printError,
+  formatError,
+} from './error';
+
+export type { GraphQLFormattedError } from './error';
 
 // Utilities for operating on GraphQL type schema and parsed sources.
 export {
   // Produce the GraphQL query recommended for a full schema introspection.
   // Accepts optional IntrospectionOptions.
   getIntrospectionQuery,
-  // Deprecated: use getIntrospectionQuery
+  // @deprecated: use getIntrospectionQuery - will be removed in v15.
   introspectionQuery,
-  // Gets the target Operation from a Document
+  // Gets the target Operation from a Document.
   getOperationAST,
+  // Gets the Type for the target Operation AST.
+  getOperationRootType,
+  // Convert a GraphQLSchema to an IntrospectionQuery.
+  introspectionFromSchema,
   // Build a GraphQLSchema from an introspection result.
   buildClientSchema,
   // Build a GraphQLSchema from a parsed GraphQL Schema language AST.
   buildASTSchema,
   // Build a GraphQLSchema from a GraphQL schema language document.
   buildSchema,
+  // @deprecated: Get the description from a schema AST node and supports legacy
+  // syntax for specifying descriptions - will be removed in v16.
+  getDescription,
   // Extends an existing GraphQLSchema from a parsed GraphQL Schema
   // language AST.
   extendSchema,
+  // Sort a GraphQLSchema.
+  lexicographicSortSchema,
   // Print a GraphQLSchema to GraphQL Schema language.
   printSchema,
+  // Print a GraphQLType to GraphQL Schema language.
+  printType,
   // Prints the built-in introspection schema in the Schema Language
   // format.
   printIntrospectionSchema,
-  // Print a GraphQLType to GraphQL Schema language.
-  printType,
   // Create a GraphQLType from a GraphQL language AST.
   typeFromAST,
   // Create a JavaScript value from a GraphQL language AST with a Type.
@@ -303,52 +385,62 @@ export {
   // A helper to use within recursive-descent visitors which need to be aware of
   // the GraphQL type system.
   TypeInfo,
-  // Determine if JavaScript values adhere to a GraphQL type.
+  // Coerces a JavaScript value to a GraphQL type, or produces errors.
+  coerceInputValue,
+  // @deprecated use coerceInputValue - will be removed in v15
+  coerceValue,
+  // @deprecated use coerceInputValue - will be removed in v15
   isValidJSValue,
-  // Determine if AST values adhere to a GraphQL type.
+  // @deprecated use validation - will be removed in v15
   isValidLiteralValue,
   // Concatenates multiple AST together.
   concatAST,
   // Separates an AST into an AST per Operation.
   separateOperations,
+  // Strips characters that are not significant to the validity or execution
+  // of a GraphQL document.
+  stripIgnoredCharacters,
   // Comparators for types
   isEqualType,
   isTypeSubTypeOf,
   doTypesOverlap,
   // Asserts a string is a valid GraphQL name.
   assertValidName,
+  // Determine if a string is a valid GraphQL name.
+  isValidNameError,
   // Compares two GraphQLSchemas and detects breaking changes.
-  findBreakingChanges,
-  findDangerousChanges,
   BreakingChangeType,
   DangerousChangeType,
+  findBreakingChanges,
+  findDangerousChanges,
   // Report all deprecated usage within a GraphQL document.
   findDeprecatedUsages,
 } from './utilities';
 
 export type {
-  BreakingChange,
-  DangerousChange,
   IntrospectionOptions,
-  IntrospectionDirective,
-  IntrospectionEnumType,
-  IntrospectionEnumValue,
-  IntrospectionField,
-  IntrospectionInputObjectType,
-  IntrospectionInputType,
-  IntrospectionInputTypeRef,
-  IntrospectionInputValue,
-  IntrospectionInterfaceType,
-  IntrospectionListTypeRef,
-  IntrospectionNamedTypeRef,
-  IntrospectionNonNullTypeRef,
-  IntrospectionObjectType,
-  IntrospectionOutputType,
-  IntrospectionOutputTypeRef,
   IntrospectionQuery,
-  IntrospectionScalarType,
   IntrospectionSchema,
   IntrospectionType,
-  IntrospectionTypeRef,
+  IntrospectionInputType,
+  IntrospectionOutputType,
+  IntrospectionScalarType,
+  IntrospectionObjectType,
+  IntrospectionInterfaceType,
   IntrospectionUnionType,
+  IntrospectionEnumType,
+  IntrospectionInputObjectType,
+  IntrospectionTypeRef,
+  IntrospectionInputTypeRef,
+  IntrospectionOutputTypeRef,
+  IntrospectionNamedTypeRef,
+  IntrospectionListTypeRef,
+  IntrospectionNonNullTypeRef,
+  IntrospectionField,
+  IntrospectionInputValue,
+  IntrospectionEnumValue,
+  IntrospectionDirective,
+  BuildSchemaOptions,
+  BreakingChange,
+  DangerousChange,
 } from './utilities';

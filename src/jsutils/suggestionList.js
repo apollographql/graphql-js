@@ -1,11 +1,4 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
 /**
  * Given an invalid input string and a list of valid options, returns a filtered
@@ -16,13 +9,12 @@ export default function suggestionList(
   options: $ReadOnlyArray<string>,
 ): Array<string> {
   const optionsByDistance = Object.create(null);
-  const oLength = options.length;
   const inputThreshold = input.length / 2;
-  for (let i = 0; i < oLength; i++) {
-    const distance = lexicalDistance(input, options[i]);
-    const threshold = Math.max(inputThreshold, options[i].length / 2, 1);
+  for (const option of options) {
+    const distance = lexicalDistance(input, option);
+    const threshold = Math.max(inputThreshold, option.length / 2, 1);
     if (distance <= threshold) {
-      optionsByDistance[options[i]] = distance;
+      optionsByDistance[option] = distance;
     }
   }
   return Object.keys(optionsByDistance).sort(
@@ -38,18 +30,33 @@ export default function suggestionList(
  * insertion, deletion, or substitution of a single character, or a swap of two
  * adjacent characters.
  *
+ * Includes a custom alteration from Damerau-Levenshtein to treat case changes
+ * as a single edit which helps identify mis-cased values with an edit distance
+ * of 1.
+ *
  * This distance can be useful for detecting typos in input or sorting
  *
  * @param {string} a
  * @param {string} b
  * @return {int} distance in number of edits
  */
-function lexicalDistance(a, b) {
+function lexicalDistance(aStr, bStr) {
+  if (aStr === bStr) {
+    return 0;
+  }
+
   let i;
   let j;
   const d = [];
+  const a = aStr.toLowerCase();
+  const b = bStr.toLowerCase();
   const aLength = a.length;
   const bLength = b.length;
+
+  // Any case change counts as a single edit
+  if (a === b) {
+    return 1;
+  }
 
   for (i = 0; i <= aLength; i++) {
     d[i] = [i];

@@ -1,20 +1,21 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
+
+import isPromise from './jsutils/isPromise';
+import { type PromiseOrValue } from './jsutils/PromiseOrValue';
 
 import { parse } from './language/parser';
+import { type Source } from './language/source';
+
 import { validate } from './validation/validate';
-import { execute } from './execution/execute';
-import type { ObjMap } from './jsutils/ObjMap';
-import type { Source } from './language/source';
-import type { GraphQLFieldResolver } from './type/definition';
-import type { GraphQLSchema } from './type/schema';
-import type { ExecutionResult } from './execution/execute';
+
+import { validateSchema } from './type/validate';
+import { type GraphQLSchema } from './type/schema';
+import {
+  type GraphQLFieldResolver,
+  type GraphQLTypeResolver,
+} from './type/definition';
+
+import { type ExecutionResult, execute } from './execution/execute';
 
 /**
  * This is the primary entry point function for fulfilling GraphQL operations
@@ -34,6 +35,11 @@ import type { ExecutionResult } from './execution/execute';
  * rootValue:
  *    The value provided as the first argument to resolver functions on the top
  *    level type (e.g. the query object type).
+ * contextValue:
+ *    The context value is provided as an argument to resolver functions after
+ *    field arguments. It is used to pass shared information useful at any point
+ *    during executing this query, for example the currently logged in user and
+ *    connections to databases or other services.
  * variableValues:
  *    A mapping of variable name to runtime value to use for all variables
  *    defined in the requestString.
@@ -45,15 +51,20 @@ import type { ExecutionResult } from './execution/execute';
  *    A resolver function to use when one is not provided by the schema.
  *    If not provided, the default field resolver is used (which looks for a
  *    value or method on the source value with the field's name).
+ * typeResolver:
+ *    A type resolver function to use when none is provided by the schema.
+ *    If not provided, the default type resolver is used (which looks for a
+ *    `__typename` field or alternatively calls the `isTypeOf` method).
  */
 export type GraphQLArgs = {|
   schema: GraphQLSchema,
   source: string | Source,
   rootValue?: mixed,
   contextValue?: mixed,
-  variableValues?: ?ObjMap<mixed>,
+  variableValues?: ?{ +[variable: string]: mixed, ... },
   operationName?: ?string,
   fieldResolver?: ?GraphQLFieldResolver<any, any>,
+  typeResolver?: ?GraphQLTypeResolver<any, any>,
 |};
 declare function graphql(GraphQLArgs, ..._: []): Promise<ExecutionResult>;
 /* eslint-disable no-redeclare */
@@ -62,9 +73,10 @@ declare function graphql(
   source: Source | string,
   rootValue?: mixed,
   contextValue?: mixed,
-  variableValues?: ?ObjMap<mixed>,
+  variableValues?: ?{ +[variable: string]: mixed, ... },
   operationName?: ?string,
   fieldResolver?: ?GraphQLFieldResolver<any, any>,
+  typeResolver?: ?GraphQLTypeResolver<any, any>,
 ): Promise<ExecutionResult>;
 export function graphql(
   argsOrSchema,
@@ -74,30 +86,25 @@ export function graphql(
   variableValues,
   operationName,
   fieldResolver,
+  typeResolver,
 ) {
+  /* eslint-enable no-redeclare */
   // Always return a Promise for a consistent API.
   return new Promise(resolve =>
     resolve(
       // Extract arguments from object args if provided.
       arguments.length === 1
-        ? graphqlImpl(
-            argsOrSchema.schema,
-            argsOrSchema.source,
-            argsOrSchema.rootValue,
-            argsOrSchema.contextValue,
-            argsOrSchema.variableValues,
-            argsOrSchema.operationName,
-            argsOrSchema.fieldResolver,
-          )
-        : graphqlImpl(
-            argsOrSchema,
+        ? graphqlImpl(argsOrSchema)
+        : graphqlImpl({
+            schema: argsOrSchema,
             source,
             rootValue,
             contextValue,
             variableValues,
             operationName,
             fieldResolver,
-          ),
+            typeResolver,
+          }),
     ),
   );
 }
@@ -115,9 +122,10 @@ declare function graphqlSync(
   source: Source | string,
   rootValue?: mixed,
   contextValue?: mixed,
-  variableValues?: ?ObjMap<mixed>,
+  variableValues?: ?{ +[variable: string]: mixed, ... },
   operationName?: ?string,
   fieldResolver?: ?GraphQLFieldResolver<any, any>,
+  typeResolver?: ?GraphQLTypeResolver<any, any>,
 ): ExecutionResult;
 export function graphqlSync(
   argsOrSchema,
@@ -127,46 +135,50 @@ export function graphqlSync(
   variableValues,
   operationName,
   fieldResolver,
+  typeResolver,
 ) {
+  /* eslint-enable no-redeclare */
   // Extract arguments from object args if provided.
   const result =
     arguments.length === 1
-      ? graphqlImpl(
-          argsOrSchema.schema,
-          argsOrSchema.source,
-          argsOrSchema.rootValue,
-          argsOrSchema.contextValue,
-          argsOrSchema.variableValues,
-          argsOrSchema.operationName,
-          argsOrSchema.fieldResolver,
-        )
-      : graphqlImpl(
-          argsOrSchema,
+      ? graphqlImpl(argsOrSchema)
+      : graphqlImpl({
+          schema: argsOrSchema,
           source,
           rootValue,
           contextValue,
           variableValues,
           operationName,
           fieldResolver,
-        );
+          typeResolver,
+        });
 
   // Assert that the execution was synchronous.
-  if (result.then) {
+  if (isPromise(result)) {
     throw new Error('GraphQL execution failed to complete synchronously.');
   }
 
   return result;
 }
 
-function graphqlImpl(
-  schema,
-  source,
-  rootValue,
-  contextValue,
-  variableValues,
-  operationName,
-  fieldResolver,
-): Promise<ExecutionResult> | ExecutionResult {
+function graphqlImpl(args: GraphQLArgs): PromiseOrValue<ExecutionResult> {
+  const {
+    schema,
+    source,
+    rootValue,
+    contextValue,
+    variableValues,
+    operationName,
+    fieldResolver,
+    typeResolver,
+  } = args;
+
+  // Validate Schema
+  const schemaValidationErrors = validateSchema(schema);
+  if (schemaValidationErrors.length > 0) {
+    return { errors: schemaValidationErrors };
+  }
+
   // Parse
   let document;
   try {
@@ -182,7 +194,7 @@ function graphqlImpl(
   }
 
   // Execute
-  return execute(
+  return execute({
     schema,
     document,
     rootValue,
@@ -190,5 +202,6 @@ function graphqlImpl(
     variableValues,
     operationName,
     fieldResolver,
-  );
+    typeResolver,
+  });
 }

@@ -1,16 +1,11 @@
-/**
- *  Copyright (c) 2017, Facebook, Inc.
- *  All rights reserved.
- *
- *  This source code is licensed under the BSD-style license found in the
- *  LICENSE file in the root directory of this source tree. An additional grant
- *  of patent rights can be found in the PATENTS file in the same directory.
- */
+// @flow strict
 
-import { describe, it } from 'mocha';
 import { expect } from 'chai';
+import { describe, it } from 'mocha';
+
+import { parseValue } from '../../language/parser';
+
 import { valueFromASTUntyped } from '../valueFromASTUntyped';
-import { parseValue } from '../../language';
 
 describe('valueFromASTUntyped', () => {
   function testCase(valueText, expected) {

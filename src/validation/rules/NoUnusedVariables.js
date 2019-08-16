@@ -1,14 +1,9 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import type { ValidationContext } from '../index';
-import { GraphQLError } from '../../error';
+import { GraphQLError } from '../../error/GraphQLError';
+import { type ASTVisitor } from '../../language/visitor';
+
+import { type ValidationContext } from '../ValidationContext';
 
 export function unusedVariableMessage(
   varName: string,
@@ -25,7 +20,7 @@ export function unusedVariableMessage(
  * A GraphQL operation is only valid if all variables defined by an operation
  * are used, either directly or within a spread fragment.
  */
-export function NoUnusedVariables(context: ValidationContext): any {
+export function NoUnusedVariables(context: ValidationContext): ASTVisitor {
   let variableDefs = [];
 
   return {
@@ -38,20 +33,21 @@ export function NoUnusedVariables(context: ValidationContext): any {
         const usages = context.getRecursiveVariableUsages(operation);
         const opName = operation.name ? operation.name.value : null;
 
-        usages.forEach(({ node }) => {
+        for (const { node } of usages) {
           variableNameUsed[node.name.value] = true;
-        });
+        }
 
-        variableDefs.forEach(variableDef => {
+        for (const variableDef of variableDefs) {
           const variableName = variableDef.variable.name.value;
           if (variableNameUsed[variableName] !== true) {
             context.reportError(
-              new GraphQLError(unusedVariableMessage(variableName, opName), [
+              new GraphQLError(
+                unusedVariableMessage(variableName, opName),
                 variableDef,
-              ]),
+              ),
             );
           }
-        });
+        }
       },
     },
     VariableDefinition(def) {

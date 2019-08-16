@@ -1,25 +1,21 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import type { ValidationContext } from '../index';
-import { GraphQLError } from '../../error';
-import type { FragmentDefinitionNode } from '../../language/ast';
+import { GraphQLError } from '../../error/GraphQLError';
+
+import { type ASTVisitor } from '../../language/visitor';
+import { type FragmentDefinitionNode } from '../../language/ast';
+
+import { type ASTValidationContext } from '../ValidationContext';
 
 export function cycleErrorMessage(
   fragName: string,
-  spreadNames: Array<string>,
+  spreadNames: $ReadOnlyArray<string>,
 ): string {
   const via = spreadNames.length ? ' via ' + spreadNames.join(', ') : '';
   return `Cannot spread fragment "${fragName}" within itself${via}.`;
 }
 
-export function NoFragmentCycles(context: ValidationContext): any {
+export function NoFragmentCycles(context: ASTValidationContext): ASTVisitor {
   // Tracks already visited fragments to maintain O(N) and to ensure that cycles
   // are not redundantly reported.
   const visitedFrags = Object.create(null);
@@ -33,9 +29,7 @@ export function NoFragmentCycles(context: ValidationContext): any {
   return {
     OperationDefinition: () => false,
     FragmentDefinition(node) {
-      if (!visitedFrags[node.name.value]) {
-        detectCycleRecursive(node);
-      }
+      detectCycleRecursive(node);
       return false;
     },
   };
@@ -44,6 +38,10 @@ export function NoFragmentCycles(context: ValidationContext): any {
   // It does not terminate when a cycle was found but continues to explore
   // the graph to find all possible cycles.
   function detectCycleRecursive(fragment: FragmentDefinitionNode) {
+    if (visitedFrags[fragment.name.value]) {
+      return;
+    }
+
     const fragmentName = fragment.name.value;
     visitedFrags[fragmentName] = true;
 
@@ -54,29 +52,27 @@ export function NoFragmentCycles(context: ValidationContext): any {
 
     spreadPathIndexByName[fragmentName] = spreadPath.length;
 
-    for (let i = 0; i < spreadNodes.length; i++) {
-      const spreadNode = spreadNodes[i];
+    for (const spreadNode of spreadNodes) {
       const spreadName = spreadNode.name.value;
       const cycleIndex = spreadPathIndexByName[spreadName];
 
+      spreadPath.push(spreadNode);
       if (cycleIndex === undefined) {
-        spreadPath.push(spreadNode);
-        if (!visitedFrags[spreadName]) {
-          const spreadFragment = context.getFragment(spreadName);
-          if (spreadFragment) {
-            detectCycleRecursive(spreadFragment);
-          }
+        const spreadFragment = context.getFragment(spreadName);
+        if (spreadFragment) {
+          detectCycleRecursive(spreadFragment);
         }
-        spreadPath.pop();
       } else {
         const cyclePath = spreadPath.slice(cycleIndex);
+        const fragmentNames = cyclePath.slice(0, -1).map(s => s.name.value);
         context.reportError(
           new GraphQLError(
-            cycleErrorMessage(spreadName, cyclePath.map(s => s.name.value)),
-            cyclePath.concat(spreadNode),
+            cycleErrorMessage(spreadName, fragmentNames),
+            cyclePath,
           ),
         );
       }
+      spreadPath.pop();
     }
 
     spreadPathIndexByName[fragmentName] = undefined;

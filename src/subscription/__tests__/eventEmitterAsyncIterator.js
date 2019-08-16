@@ -1,11 +1,4 @@
-/**
- * Copyright (c) 2017-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
 import type EventEmitter from 'events';
 import { $$asyncIterator } from 'iterall';
@@ -45,7 +38,9 @@ export default function eventEmitterAsyncIterator(
     if (listening) {
       listening = false;
       eventEmitter.removeListener(eventName, pushValue);
-      pullQueue.forEach(resolve => resolve({ value: undefined, done: true }));
+      for (const resolve of pullQueue) {
+        resolve({ value: undefined, done: true });
+      }
       pullQueue.length = 0;
       pushQueue.length = 0;
     }

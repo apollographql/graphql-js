@@ -1,48 +1,47 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import type { ValidationContext } from '../index';
-import { GraphQLError } from '../../error';
-import find from '../../jsutils/find';
-import type { ObjMap } from '../../jsutils/ObjMap';
-import type {
-  SelectionSetNode,
-  FieldNode,
-  ArgumentNode,
-  FragmentDefinitionNode,
-} from '../../language/ast';
-import * as Kind from '../../language/kinds';
+import find from '../../polyfills/find';
+import objectEntries from '../../polyfills/objectEntries';
+
+import inspect from '../../jsutils/inspect';
+import { type ObjMap } from '../../jsutils/ObjMap';
+
+import { GraphQLError } from '../../error/GraphQLError';
+
+import { Kind } from '../../language/kinds';
 import { print } from '../../language/printer';
+import { type ASTVisitor } from '../../language/visitor';
 import {
+  type SelectionSetNode,
+  type FieldNode,
+  type ArgumentNode,
+  type FragmentDefinitionNode,
+} from '../../language/ast';
+
+import {
+  type GraphQLNamedType,
+  type GraphQLOutputType,
+  type GraphQLCompositeType,
+  type GraphQLField,
   getNamedType,
+  isNonNullType,
   isLeafType,
-  GraphQLList,
-  GraphQLNonNull,
-  GraphQLObjectType,
-  GraphQLInterfaceType,
+  isObjectType,
+  isListType,
+  isInterfaceType,
 } from '../../type/definition';
-import type {
-  GraphQLNamedType,
-  GraphQLOutputType,
-  GraphQLCompositeType,
-  GraphQLField,
-} from '../../type/definition';
+
 import { typeFromAST } from '../../utilities/typeFromAST';
+
+import { type ValidationContext } from '../ValidationContext';
 
 export function fieldsConflictMessage(
   responseName: string,
   reason: ConflictReasonMessage,
 ): string {
   return (
-    `Fields "${responseName}" conflict because ${reasonMessage(reason)}` +
-    '. Use different aliases on the fields to fetch both if this was ' +
-    'intentional.'
+    `Fields "${responseName}" conflict because ${reasonMessage(reason)}. ` +
+    'Use different aliases on the fields to fetch both if this was intentional.'
   );
 }
 
@@ -67,7 +66,9 @@ function reasonMessage(reason: ConflictReasonMessage): string {
  * fragments) either correspond to distinct response names or can be merged
  * without ambiguity.
  */
-export function OverlappingFieldsCanBeMerged(context: ValidationContext): any {
+export function OverlappingFieldsCanBeMerged(
+  context: ValidationContext,
+): ASTVisitor {
   // A memoization for when two fragments are compared "between" each other for
   // conflicts. Two fragments may be compared many times, so memoizing this can
   // dramatically improve the performance of this validator.
@@ -87,14 +88,14 @@ export function OverlappingFieldsCanBeMerged(context: ValidationContext): any {
         context.getParentType(),
         selectionSet,
       );
-      conflicts.forEach(([[responseName, reason], fields1, fields2]) =>
+      for (const [[responseName, reason], fields1, fields2] of conflicts) {
         context.reportError(
           new GraphQLError(
             fieldsConflictMessage(responseName, reason),
             fields1.concat(fields2),
           ),
-        ),
-      );
+        );
+      }
     },
   };
 }
@@ -105,7 +106,11 @@ type ConflictReason = [string, ConflictReasonMessage];
 // Reason is a string, or a nested list of conflicts.
 type ConflictReasonMessage = string | Array<ConflictReason>;
 // Tuple defining a field node in a context.
-type NodeAndDef = [GraphQLCompositeType, FieldNode, ?GraphQLField<*, *>];
+type NodeAndDef = [
+  GraphQLCompositeType,
+  FieldNode,
+  ?GraphQLField<mixed, mixed>,
+];
 // Map of array of those.
 type NodeAndDefCollection = ObjMap<Array<NodeAndDef>>;
 
@@ -482,8 +487,7 @@ function collectConflictsWithin(
   // name and the value at that key is a list of all fields which provide that
   // response name. For every response name, if there are multiple fields, they
   // must be compared to find a potential conflict.
-  Object.keys(fieldMap).forEach(responseName => {
-    const fields = fieldMap[responseName];
+  for (const [responseName, fields] of objectEntries(fieldMap)) {
     // This compares every field in the list to every other field in this list
     // (except to itself). If the list only has one item, nothing needs to
     // be compared.
@@ -505,7 +509,7 @@ function collectConflictsWithin(
         }
       }
     }
-  });
+  }
 }
 
 // Collect all Conflicts between two collections of fields. This is similar to,
@@ -527,7 +531,7 @@ function collectConflictsBetween(
   // response name. For any response name which appears in both provided field
   // maps, each field from the first field map must be compared to every field
   // in the second field map to find potential conflicts.
-  Object.keys(fieldMap1).forEach(responseName => {
+  for (const responseName of Object.keys(fieldMap1)) {
     const fields2 = fieldMap2[responseName];
     if (fields2) {
       const fields1 = fieldMap1[responseName];
@@ -548,7 +552,7 @@ function collectConflictsBetween(
         }
       }
     }
-  });
+  }
 }
 
 // Determines if there is a conflict between two particular fields, including
@@ -576,8 +580,8 @@ function findConflict(
   const areMutuallyExclusive =
     parentFieldsAreMutuallyExclusive ||
     (parentType1 !== parentType2 &&
-      parentType1 instanceof GraphQLObjectType &&
-      parentType2 instanceof GraphQLObjectType);
+      isObjectType(parentType1) &&
+      isObjectType(parentType2));
 
   // The return type for each field.
   const type1 = def1 && def1.type;
@@ -609,7 +613,7 @@ function findConflict(
     return [
       [
         responseName,
-        `they return conflicting types ${String(type1)} and ${String(type2)}`,
+        `they return conflicting types ${inspect(type1)} and ${inspect(type2)}`,
       ],
       [node1],
       [node2],
@@ -637,8 +641,8 @@ function findConflict(
 }
 
 function sameArguments(
-  arguments1: Array<ArgumentNode>,
-  arguments2: Array<ArgumentNode>,
+  arguments1: $ReadOnlyArray<ArgumentNode>,
+  arguments2: $ReadOnlyArray<ArgumentNode>,
 ): boolean {
   if (arguments1.length !== arguments2.length) {
     return false;
@@ -666,25 +670,21 @@ function doTypesConflict(
   type1: GraphQLOutputType,
   type2: GraphQLOutputType,
 ): boolean {
-  if (type1 instanceof GraphQLList) {
-    return type2 instanceof GraphQLList
+  if (isListType(type1)) {
+    return isListType(type2)
       ? doTypesConflict(type1.ofType, type2.ofType)
       : true;
   }
-  if (type2 instanceof GraphQLList) {
-    return type1 instanceof GraphQLList
+  if (isListType(type2)) {
+    return true;
+  }
+  if (isNonNullType(type1)) {
+    return isNonNullType(type2)
       ? doTypesConflict(type1.ofType, type2.ofType)
       : true;
   }
-  if (type1 instanceof GraphQLNonNull) {
-    return type2 instanceof GraphQLNonNull
-      ? doTypesConflict(type1.ofType, type2.ofType)
-      : true;
-  }
-  if (type2 instanceof GraphQLNonNull) {
-    return type1 instanceof GraphQLNonNull
-      ? doTypesConflict(type1.ofType, type2.ofType)
-      : true;
+  if (isNonNullType(type2)) {
+    return true;
   }
   if (isLeafType(type1) || isLeafType(type2)) {
     return type1 !== type2;
@@ -750,13 +750,10 @@ function _collectFieldsAndFragmentNames(
   for (let i = 0; i < selectionSet.selections.length; i++) {
     const selection = selectionSet.selections[i];
     switch (selection.kind) {
-      case Kind.FIELD:
+      case Kind.FIELD: {
         const fieldName = selection.name.value;
         let fieldDef;
-        if (
-          parentType instanceof GraphQLObjectType ||
-          parentType instanceof GraphQLInterfaceType
-        ) {
+        if (isObjectType(parentType) || isInterfaceType(parentType)) {
           fieldDef = parentType.getFields()[fieldName];
         }
         const responseName = selection.alias
@@ -767,10 +764,11 @@ function _collectFieldsAndFragmentNames(
         }
         nodeAndDefs[responseName].push([parentType, selection, fieldDef]);
         break;
+      }
       case Kind.FRAGMENT_SPREAD:
         fragmentNames[selection.name.value] = true;
         break;
-      case Kind.INLINE_FRAGMENT:
+      case Kind.INLINE_FRAGMENT: {
         const typeCondition = selection.typeCondition;
         const inlineFragmentType = typeCondition
           ? typeFromAST(context.getSchema(), typeCondition)
@@ -783,6 +781,7 @@ function _collectFieldsAndFragmentNames(
           fragmentNames,
         );
         break;
+      }
     }
   }
 }
@@ -790,7 +789,7 @@ function _collectFieldsAndFragmentNames(
 // Given a series of Conflicts which occurred between two sub-fields, generate
 // a single Conflict.
 function subfieldConflicts(
-  conflicts: Array<Conflict>,
+  conflicts: $ReadOnlyArray<Conflict>,
   responseName: string,
   node1: FieldNode,
   node2: FieldNode,

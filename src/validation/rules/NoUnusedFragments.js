@@ -1,14 +1,9 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import type { ValidationContext } from '../index';
-import { GraphQLError } from '../../error';
+import { GraphQLError } from '../../error/GraphQLError';
+import { type ASTVisitor } from '../../language/visitor';
+
+import { type ASTValidationContext } from '../ValidationContext';
 
 export function unusedFragMessage(fragName: string): string {
   return `Fragment "${fragName}" is never used.`;
@@ -20,7 +15,7 @@ export function unusedFragMessage(fragName: string): string {
  * A GraphQL document is only valid if all fragment definitions are spread
  * within operations, or spread within other fragments spread within operations.
  */
-export function NoUnusedFragments(context: ValidationContext): any {
+export function NoUnusedFragments(context: ASTValidationContext): ASTVisitor {
   const operationDefs = [];
   const fragmentDefs = [];
 
@@ -36,22 +31,22 @@ export function NoUnusedFragments(context: ValidationContext): any {
     Document: {
       leave() {
         const fragmentNameUsed = Object.create(null);
-        operationDefs.forEach(operation => {
-          context
-            .getRecursivelyReferencedFragments(operation)
-            .forEach(fragment => {
-              fragmentNameUsed[fragment.name.value] = true;
-            });
-        });
+        for (const operation of operationDefs) {
+          for (const fragment of context.getRecursivelyReferencedFragments(
+            operation,
+          )) {
+            fragmentNameUsed[fragment.name.value] = true;
+          }
+        }
 
-        fragmentDefs.forEach(fragmentDef => {
+        for (const fragmentDef of fragmentDefs) {
           const fragName = fragmentDef.name.value;
           if (fragmentNameUsed[fragName] !== true) {
             context.reportError(
-              new GraphQLError(unusedFragMessage(fragName), [fragmentDef]),
+              new GraphQLError(unusedFragMessage(fragName), fragmentDef),
             );
           }
-        });
+        }
       },
     },
   };

@@ -1,32 +1,47 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// @flow strict
+
+import { inspect as nodeInspect } from 'util';
 
 import { expect } from 'chai';
 import { describe, it } from 'mocha';
+
+import dedent from '../../jsutils/dedent';
+import inspect from '../../jsutils/inspect';
+
+import { GraphQLError } from '../../error/GraphQLError';
+
 import { Source } from '../source';
-import { createLexer, TokenKind } from '../lexer';
+import { TokenKind } from '../tokenKind';
+import { createLexer, isPunctuatorToken } from '../lexer';
 
 function lexOne(str) {
   const lexer = createLexer(new Source(str));
   return lexer.advance();
 }
 
-/* eslint-disable max-len */
+function lexSecond(str) {
+  const lexer = createLexer(new Source(str));
+  lexer.advance();
+  return lexer.advance();
+}
+
+function expectSyntaxError(text, message, location) {
+  expect(() => lexOne(text))
+    .to.throw('Syntax Error: ' + message)
+    .with.deep.property('locations', [location]);
+}
 
 describe('Lexer', () => {
   it('disallows uncommon control characters', () => {
-    expect(() => lexOne('\u0007')).to.throw(
-      'Syntax Error GraphQL request (1:1) ' +
-        'Cannot contain the invalid character "\\u0007"',
+    expectSyntaxError(
+      '\u0007',
+      'Cannot contain the invalid character "\\u0007".',
+      { line: 1, column: 1 },
     );
   });
 
   it('accepts BOM header', () => {
-    expect(lexOne('\uFEFF foo')).to.containSubset({
+    expect(lexOne('\uFEFF foo')).to.contain({
       kind: TokenKind.NAME,
       start: 2,
       end: 5,
@@ -35,7 +50,7 @@ describe('Lexer', () => {
   });
 
   it('records line and column', () => {
-    expect(lexOne('\n \r\n \r  foo\n')).to.containSubset({
+    expect(lexOne('\n \r\n \r  foo\n')).to.contain({
       kind: TokenKind.NAME,
       start: 8,
       end: 11,
@@ -45,17 +60,17 @@ describe('Lexer', () => {
     });
   });
 
-  it('can be JSON.stringified or util.inspected', () => {
+  it('can be JSON.stringified, util.inspected or jsutils.inspect', () => {
     const token = lexOne('foo');
     expect(JSON.stringify(token)).to.equal(
       '{"kind":"Name","value":"foo","line":1,"column":1}',
     );
-    // NB: util.inspect used to suck
-    if (parseFloat(process.version.slice(1)) > 0.1) {
-      expect(require('util').inspect(token)).to.equal(
-        "{ kind: 'Name', value: 'foo', line: 1, column: 1 }",
-      );
-    }
+    expect(nodeInspect(token)).to.equal(
+      "{ kind: 'Name', value: 'foo', line: 1, column: 1 }",
+    );
+    expect(inspect(token)).to.equal(
+      '{ kind: "Name", value: "foo", line: 1, column: 1 }',
+    );
   });
 
   it('skips whitespace and comments', () => {
@@ -66,7 +81,7 @@ describe('Lexer', () => {
 
 
 `),
-    ).to.containSubset({
+    ).to.contain({
       kind: TokenKind.NAME,
       start: 6,
       end: 9,
@@ -78,14 +93,14 @@ describe('Lexer', () => {
     #comment
     foo#comment
 `),
-    ).to.containSubset({
+    ).to.contain({
       kind: TokenKind.NAME,
       start: 18,
       end: 21,
       value: 'foo',
     });
 
-    expect(lexOne(',,,foo,,,')).to.containSubset({
+    expect(lexOne(',,,foo,,,')).to.contain({
       kind: TokenKind.NAME,
       start: 3,
       end: 6,
@@ -94,90 +109,103 @@ describe('Lexer', () => {
   });
 
   it('errors respect whitespace', () => {
-    expect(() =>
-      lexOne(`
+    let caughtError;
+    try {
+      lexOne(dedent`
+      
+      
+          ?
+      
+      
+      `);
+    } catch (error) {
+      caughtError = error;
+    }
+    expect(String(caughtError) + '\n').to.equal(dedent`
+      Syntax Error: Cannot parse the unexpected character "?".
 
-    ?
-
-
-`),
-    ).to.throw(
-      'Syntax Error GraphQL request (3:5) ' +
-        'Cannot parse the unexpected character "?".\n' +
-        '\n' +
-        '2: \n' +
-        '3:     ?\n' +
-        '       ^\n' +
-        '4: \n',
-    );
+      GraphQL request:3:5
+      2 | 
+      3 |     ?
+        |     ^
+      4 | 
+    `);
   });
 
   it('updates line numbers in error for file context', () => {
-    expect(() => {
-      const str = '' + '\n' + '\n' + '     ?\n' + '\n';
+    let caughtError;
+    try {
+      const str = ['', '', '     ?', ''].join('\n');
       const source = new Source(str, 'foo.js', { line: 11, column: 12 });
-      return createLexer(source).advance();
-    }).to.throw(
-      'Syntax Error foo.js (13:6) ' +
-        'Cannot parse the unexpected character "?".\n' +
-        '\n' +
-        '12: \n' +
-        '13:      ?\n' +
-        '         ^\n' +
-        '14: \n',
-    );
+      createLexer(source).advance();
+    } catch (error) {
+      caughtError = error;
+    }
+    expect(String(caughtError) + '\n').to.equal(dedent`
+      Syntax Error: Cannot parse the unexpected character "?".
+
+      foo.js:13:6
+      12 | 
+      13 |      ?
+         |      ^
+      14 | 
+    `);
   });
 
   it('updates column numbers in error for file context', () => {
-    expect(() => {
+    let caughtError;
+    try {
       const source = new Source('?', 'foo.js', { line: 1, column: 5 });
-      return createLexer(source).advance();
-    }).to.throw(
-      'Syntax Error foo.js (1:5) ' +
-        'Cannot parse the unexpected character "?".\n' +
-        '\n' +
-        '1:     ?\n' +
-        '       ^\n',
-    );
+      createLexer(source).advance();
+    } catch (error) {
+      caughtError = error;
+    }
+    expect(String(caughtError) + '\n').to.equal(dedent`
+      Syntax Error: Cannot parse the unexpected character "?".
+
+      foo.js:1:5
+      1 |     ?
+        |     ^
+    `);
   });
 
   it('lexes strings', () => {
-    expect(lexOne('"simple"')).to.containSubset({
+    expect(lexOne('"simple"')).to.contain({
       kind: TokenKind.STRING,
       start: 0,
       end: 8,
       value: 'simple',
     });
 
-    expect(lexOne('" white space "')).to.containSubset({
+    expect(lexOne('" white space "')).to.contain({
       kind: TokenKind.STRING,
       start: 0,
       end: 15,
       value: ' white space ',
     });
 
-    expect(lexOne('"quote \\""')).to.containSubset({
+    expect(lexOne('"quote \\""')).to.contain({
       kind: TokenKind.STRING,
       start: 0,
       end: 10,
       value: 'quote "',
     });
 
-    expect(lexOne('"escaped \\n\\r\\b\\t\\f"')).to.containSubset({
+    expect(lexOne('"escaped \\n\\r\\b\\t\\f"')).to.contain({
       kind: TokenKind.STRING,
       start: 0,
       end: 20,
       value: 'escaped \n\r\b\t\f',
     });
 
-    expect(lexOne('"slashes \\\\ \\/"')).to.containSubset({
+    expect(lexOne('"slashes \\\\ \\/"')).to.contain({
       kind: TokenKind.STRING,
       start: 0,
       end: 15,
       value: 'slashes \\ /',
     });
 
-    expect(lexOne('"unicode \\u1234\\u5678\\u90AB\\uCDEF"')).to.containSubset({
+    expect(lexOne('"unicode \\u1234\\u5678\\u90AB\\uCDEF"')).to.contain({
       kind: TokenKind.STRING,
       start: 0,
       end: 34,
@@ -186,115 +214,135 @@ describe('Lexer', () => {
   });
 
   it('lex reports useful string errors', () => {
-    expect(() => lexOne('"')).to.throw(
-      'Syntax Error GraphQL request (1:2) Unterminated string.',
+    expectSyntaxError('"', 'Unterminated string.', { line: 1, column: 2 });
+
+    expectSyntaxError('"no end quote', 'Unterminated string.', {
+      line: 1,
+      column: 14,
+    });
+
+    expectSyntaxError(
+      "'single quotes'",
+      'Unexpected single quote character (\'), did you mean to use a double quote (")?',
+      { line: 1, column: 1 },
     );
 
-    expect(() => lexOne('"no end quote')).to.throw(
-      'Syntax Error GraphQL request (1:14) Unterminated string.',
+    expectSyntaxError(
+      '"contains unescaped \u0007 control char"',
+      'Invalid character within String: "\\u0007".',
+      { line: 1, column: 21 },
     );
 
-    expect(() => lexOne("'single quotes'")).to.throw(
-      "Syntax Error GraphQL request (1:1) Unexpected single quote character ('), " +
-        'did you mean to use a double quote (")?',
+    expectSyntaxError(
+      '"null-byte is not \u0000 end of file"',
+      'Invalid character within String: "\\u0000".',
+      { line: 1, column: 19 },
     );
 
-    expect(() => lexOne('"contains unescaped \u0007 control char"')).to.throw(
-      'Syntax Error GraphQL request (1:21) Invalid character within String: "\\u0007".',
+    expectSyntaxError('"multi\nline"', 'Unterminated string.', {
+      line: 1,
+      column: 7,
+    });
+
+    expectSyntaxError('"multi\rline"', 'Unterminated string.', {
+      line: 1,
+      column: 7,
+    });
+
+    expectSyntaxError(
+      '"bad \\z esc"',
+      'Invalid character escape sequence: \\z.',
+      { line: 1, column: 7 },
     );
 
-    expect(() => lexOne('"null-byte is not \u0000 end of file"')).to.throw(
-      'Syntax Error GraphQL request (1:19) Invalid character within String: "\\u0000".',
+    expectSyntaxError(
+      '"bad \\x esc"',
+      'Invalid character escape sequence: \\x.',
+      { line: 1, column: 7 },
     );
 
-    expect(() => lexOne('"multi\nline"')).to.throw(
-      'Syntax Error GraphQL request (1:7) Unterminated string',
+    expectSyntaxError(
+      '"bad \\u1 esc"',
+      'Invalid character escape sequence: \\u1 es.',
+      { line: 1, column: 7 },
     );
 
-    expect(() => lexOne('"multi\rline"')).to.throw(
-      'Syntax Error GraphQL request (1:7) Unterminated string',
+    expectSyntaxError(
+      '"bad \\u0XX1 esc"',
+      'Invalid character escape sequence: \\u0XX1.',
+      { line: 1, column: 7 },
     );
 
-    expect(() => lexOne('"bad \\z esc"')).to.throw(
-      'Syntax Error GraphQL request (1:7) Invalid character escape sequence: \\z.',
+    expectSyntaxError(
+      '"bad \\uXXXX esc"',
+      'Invalid character escape sequence: \\uXXXX.',
+      { line: 1, column: 7 },
     );
 
-    expect(() => lexOne('"bad \\x esc"')).to.throw(
-      'Syntax Error GraphQL request (1:7) Invalid character escape sequence: \\x.',
+    expectSyntaxError(
+      '"bad \\uFXXX esc"',
+      'Invalid character escape sequence: \\uFXXX.',
+      { line: 1, column: 7 },
     );
 
-    expect(() => lexOne('"bad \\u1 esc"')).to.throw(
-      'Syntax Error GraphQL request (1:7) Invalid character escape sequence: \\u1 es.',
-    );
-
-    expect(() => lexOne('"bad \\u0XX1 esc"')).to.throw(
-      'Syntax Error GraphQL request (1:7) Invalid character escape sequence: \\u0XX1.',
-    );
-
-    expect(() => lexOne('"bad \\uXXXX esc"')).to.throw(
-      'Syntax Error GraphQL request (1:7) Invalid character escape sequence: \\uXXXX.',
-    );
-
-    expect(() => lexOne('"bad \\uFXXX esc"')).to.throw(
-      'Syntax Error GraphQL request (1:7) Invalid character escape sequence: \\uFXXX.',
-    );
-
-    expect(() => lexOne('"bad \\uXXXF esc"')).to.throw(
-      'Syntax Error GraphQL request (1:7) Invalid character escape sequence: \\uXXXF.',
+    expectSyntaxError(
+      '"bad \\uXXXF esc"',
+      'Invalid character escape sequence: \\uXXXF.',
+      { line: 1, column: 7 },
     );
   });
 
   it('lexes block strings', () => {
-    expect(lexOne('"""simple"""')).to.containSubset({
+    expect(lexOne('"""simple"""')).to.contain({
       kind: TokenKind.BLOCK_STRING,
       start: 0,
       end: 12,
       value: 'simple',
     });
 
-    expect(lexOne('""" white space """')).to.containSubset({
+    expect(lexOne('""" white space """')).to.contain({
       kind: TokenKind.BLOCK_STRING,
       start: 0,
       end: 19,
       value: ' white space ',
     });
 
-    expect(lexOne('"""contains " quote"""')).to.containSubset({
+    expect(lexOne('"""contains " quote"""')).to.contain({
       kind: TokenKind.BLOCK_STRING,
       start: 0,
       end: 22,
       value: 'contains " quote',
     });
 
-    expect(lexOne('"""contains \\""" triplequote"""')).to.containSubset({
+    expect(lexOne('"""contains \\""" triplequote"""')).to.contain({
       kind: TokenKind.BLOCK_STRING,
       start: 0,
       end: 31,
       value: 'contains """ triplequote',
     });
 
-    expect(lexOne('"""multi\nline"""')).to.containSubset({
+    expect(lexOne('"""multi\nline"""')).to.contain({
       kind: TokenKind.BLOCK_STRING,
       start: 0,
       end: 16,
       value: 'multi\nline',
     });
 
-    expect(lexOne('"""multi\rline\r\nnormalized"""')).to.containSubset({
+    expect(lexOne('"""multi\rline\r\nnormalized"""')).to.contain({
       kind: TokenKind.BLOCK_STRING,
       start: 0,
       end: 28,
       value: 'multi\nline\nnormalized',
     });
 
-    expect(lexOne('"""unescaped \\n\\r\\b\\t\\f\\u1234"""')).to.containSubset({
+    expect(lexOne('"""unescaped \\n\\r\\b\\t\\f\\u1234"""')).to.contain({
       kind: TokenKind.BLOCK_STRING,
       start: 0,
       end: 32,
       value: 'unescaped \\n\\r\\b\\t\\f\\u1234',
     });
 
-    expect(lexOne('"""slashes \\\\ \\/"""')).to.containSubset({
+    expect(lexOne('"""slashes \\\\ \\/"""')).to.contain({
       kind: TokenKind.BLOCK_STRING,
       start: 0,
       end: 19,
@@ -309,7 +357,7 @@ describe('Lexer', () => {
             lines
 
         """`),
-    ).to.containSubset({
+    ).to.contain({
       kind: TokenKind.BLOCK_STRING,
       start: 0,
       end: 68,
@@ -317,133 +365,172 @@ describe('Lexer', () => {
     });
   });
 
+  it('advance line after lexing multiline block string', () => {
+    expect(
+      lexSecond(`"""
+
+        spans
+          multiple
+            lines
+
+        \n """ second_token`),
+    ).to.contain({
+      kind: TokenKind.NAME,
+      start: 71,
+      end: 83,
+      line: 8,
+      column: 6,
+      value: 'second_token',
+    });
+
+    expect(
+      lexSecond(
+        [
+          '""" \n',
+          'spans \r\n',
+          'multiple \n\r',
+          'lines \n\n',
+          '"""\n second_token',
+        ].join(''),
+      ),
+    ).to.contain({
+      kind: TokenKind.NAME,
+      start: 37,
+      end: 49,
+      line: 8,
+      column: 2,
+      value: 'second_token',
+    });
+  });
+
   it('lex reports useful block string errors', () => {
-    expect(() => lexOne('"""')).to.throw(
-      'Syntax Error GraphQL request (1:4) Unterminated string.',
+    expectSyntaxError('"""', 'Unterminated string.', { line: 1, column: 4 });
+
+    expectSyntaxError('"""no end quote', 'Unterminated string.', {
+      line: 1,
+      column: 16,
+    });
+
+    expectSyntaxError(
+      '"""contains unescaped \u0007 control char"""',
+      'Invalid character within String: "\\u0007".',
+      { line: 1, column: 23 },
     );
 
-    expect(() => lexOne('"""no end quote')).to.throw(
-      'Syntax Error GraphQL request (1:16) Unterminated string.',
-    );
-
-    expect(() =>
-      lexOne('"""contains unescaped \u0007 control char"""'),
-    ).to.throw(
-      'Syntax Error GraphQL request (1:23) Invalid character within String: "\\u0007".',
-    );
-
-    expect(() => lexOne('"""null-byte is not \u0000 end of file"""')).to.throw(
-      'Syntax Error GraphQL request (1:21) Invalid character within String: "\\u0000".',
+    expectSyntaxError(
+      '"""null-byte is not \u0000 end of file"""',
+      'Invalid character within String: "\\u0000".',
+      { line: 1, column: 21 },
     );
   });
 
   it('lexes numbers', () => {
-    expect(lexOne('4')).to.containSubset({
+    expect(lexOne('4')).to.contain({
       kind: TokenKind.INT,
       start: 0,
       end: 1,
       value: '4',
     });
 
-    expect(lexOne('4.123')).to.containSubset({
+    expect(lexOne('4.123')).to.contain({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 5,
       value: '4.123',
     });
 
-    expect(lexOne('-4')).to.containSubset({
+    expect(lexOne('-4')).to.contain({
       kind: TokenKind.INT,
       start: 0,
       end: 2,
       value: '-4',
     });
 
-    expect(lexOne('9')).to.containSubset({
+    expect(lexOne('9')).to.contain({
       kind: TokenKind.INT,
       start: 0,
       end: 1,
       value: '9',
     });
 
-    expect(lexOne('0')).to.containSubset({
+    expect(lexOne('0')).to.contain({
       kind: TokenKind.INT,
       start: 0,
       end: 1,
       value: '0',
     });
 
-    expect(lexOne('-4.123')).to.containSubset({
+    expect(lexOne('-4.123')).to.contain({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 6,
       value: '-4.123',
     });
 
-    expect(lexOne('0.123')).to.containSubset({
+    expect(lexOne('0.123')).to.contain({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 5,
       value: '0.123',
     });
 
-    expect(lexOne('123e4')).to.containSubset({
+    expect(lexOne('123e4')).to.contain({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 5,
       value: '123e4',
     });
 
-    expect(lexOne('123E4')).to.containSubset({
+    expect(lexOne('123E4')).to.contain({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 5,
       value: '123E4',
     });
 
-    expect(lexOne('123e-4')).to.containSubset({
+    expect(lexOne('123e-4')).to.contain({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 6,
       value: '123e-4',
     });
 
-    expect(lexOne('123e+4')).to.containSubset({
+    expect(lexOne('123e+4')).to.contain({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 6,
       value: '123e+4',
     });
 
-    expect(lexOne('-1.123e4')).to.containSubset({
+    expect(lexOne('-1.123e4')).to.contain({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 8,
       value: '-1.123e4',
     });
 
-    expect(lexOne('-1.123E4')).to.containSubset({
+    expect(lexOne('-1.123E4')).to.contain({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 8,
       value: '-1.123E4',
     });
 
-    expect(lexOne('-1.123e-4')).to.containSubset({
+    expect(lexOne('-1.123e-4')).to.contain({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 9,
       value: '-1.123e-4',
     });
 
-    expect(lexOne('-1.123e+4')).to.containSubset({
+    expect(lexOne('-1.123e+4')).to.contain({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 9,
       value: '-1.123e+4',
     });
 
-    expect(lexOne('-1.123e4567')).to.containSubset({
+    expect(lexOne('-1.123e4567')).to.contain({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 11,
@@ -452,136 +539,139 @@ describe('Lexer', () => {
   });
 
   it('lex reports useful number errors', () => {
-    expect(() => lexOne('00')).to.throw(
-      'Syntax Error GraphQL request (1:2) Invalid number, ' +
-        'unexpected digit after 0: "0".',
+    expectSyntaxError('00', 'Invalid number, unexpected digit after 0: "0".', {
+      line: 1,
+      column: 2,
+    });
+
+    expectSyntaxError('+1', 'Cannot parse the unexpected character "+".', {
+      line: 1,
+      column: 1,
+    });
+
+    expectSyntaxError('1.', 'Invalid number, expected digit but got: <EOF>.', {
+      line: 1,
+      column: 3,
+    });
+
+    expectSyntaxError('1.e1', 'Invalid number, expected digit but got: "e".', {
+      line: 1,
+      column: 3,
+    });
+
+    expectSyntaxError('.123', 'Cannot parse the unexpected character ".".', {
+      line: 1,
+      column: 1,
+    });
+
+    expectSyntaxError('1.A', 'Invalid number, expected digit but got: "A".', {
+      line: 1,
+      column: 3,
+    });
+
+    expectSyntaxError('-A', 'Invalid number, expected digit but got: "A".', {
+      line: 1,
+      column: 2,
+    });
+
+    expectSyntaxError(
+      '1.0e',
+      'Invalid number, expected digit but got: <EOF>.',
+      { line: 1, column: 5 },
     );
 
-    expect(() => lexOne('+1')).to.throw(
-      'Syntax Error GraphQL request (1:1) Cannot parse the unexpected character "+".',
-    );
-
-    expect(() => lexOne('1.')).to.throw(
-      'Syntax Error GraphQL request (1:3) Invalid number, ' +
-        'expected digit but got: <EOF>.',
-    );
-
-    expect(() => lexOne('1.e1')).to.throw(
-      'Syntax Error GraphQL request (1:3) Invalid number, ' +
-        'expected digit but got: "e".',
-    );
-
-    expect(() => lexOne('.123')).to.throw(
-      'Syntax Error GraphQL request (1:1) Cannot parse the unexpected character ".".',
-    );
-
-    expect(() => lexOne('1.A')).to.throw(
-      'Syntax Error GraphQL request (1:3) Invalid number, ' +
-        'expected digit but got: "A".',
-    );
-
-    expect(() => lexOne('-A')).to.throw(
-      'Syntax Error GraphQL request (1:2) Invalid number, ' +
-        'expected digit but got: "A".',
-    );
-
-    expect(() => lexOne('1.0e')).to.throw(
-      'Syntax Error GraphQL request (1:5) Invalid number, ' +
-        'expected digit but got: <EOF>.',
-    );
-
-    expect(() => lexOne('1.0eA')).to.throw(
-      'Syntax Error GraphQL request (1:5) Invalid number, ' +
-        'expected digit but got: "A".',
-    );
+    expectSyntaxError('1.0eA', 'Invalid number, expected digit but got: "A".', {
+      line: 1,
+      column: 5,
+    });
   });
 
   it('lexes punctuation', () => {
-    expect(lexOne('!')).to.containSubset({
+    expect(lexOne('!')).to.contain({
       kind: TokenKind.BANG,
       start: 0,
       end: 1,
       value: undefined,
     });
 
-    expect(lexOne('$')).to.containSubset({
+    expect(lexOne('$')).to.contain({
       kind: TokenKind.DOLLAR,
       start: 0,
       end: 1,
       value: undefined,
     });
 
-    expect(lexOne('(')).to.containSubset({
+    expect(lexOne('(')).to.contain({
       kind: TokenKind.PAREN_L,
       start: 0,
       end: 1,
       value: undefined,
     });
 
-    expect(lexOne(')')).to.containSubset({
+    expect(lexOne(')')).to.contain({
       kind: TokenKind.PAREN_R,
       start: 0,
       end: 1,
       value: undefined,
     });
 
-    expect(lexOne('...')).to.containSubset({
+    expect(lexOne('...')).to.contain({
       kind: TokenKind.SPREAD,
       start: 0,
       end: 3,
       value: undefined,
     });
 
-    expect(lexOne(':')).to.containSubset({
+    expect(lexOne(':')).to.contain({
       kind: TokenKind.COLON,
       start: 0,
       end: 1,
       value: undefined,
     });
 
-    expect(lexOne('=')).to.containSubset({
+    expect(lexOne('=')).to.contain({
       kind: TokenKind.EQUALS,
       start: 0,
       end: 1,
       value: undefined,
     });
 
-    expect(lexOne('@')).to.containSubset({
+    expect(lexOne('@')).to.contain({
       kind: TokenKind.AT,
       start: 0,
       end: 1,
       value: undefined,
     });
 
-    expect(lexOne('[')).to.containSubset({
+    expect(lexOne('[')).to.contain({
       kind: TokenKind.BRACKET_L,
       start: 0,
       end: 1,
       value: undefined,
     });
 
-    expect(lexOne(']')).to.containSubset({
+    expect(lexOne(']')).to.contain({
       kind: TokenKind.BRACKET_R,
       start: 0,
       end: 1,
       value: undefined,
     });
 
-    expect(lexOne('{')).to.containSubset({
+    expect(lexOne('{')).to.contain({
       kind: TokenKind.BRACE_L,
       start: 0,
       end: 1,
       value: undefined,
     });
 
-    expect(lexOne('|')).to.containSubset({
+    expect(lexOne('|')).to.contain({
       kind: TokenKind.PIPE,
       start: 0,
       end: 1,
       value: undefined,
     });
 
-    expect(lexOne('}')).to.containSubset({
+    expect(lexOne('}')).to.contain({
       kind: TokenKind.BRACE_R,
       start: 0,
       end: 1,
@@ -590,56 +680,65 @@ describe('Lexer', () => {
   });
 
   it('lex reports useful unknown character error', () => {
-    expect(() => lexOne('..')).to.throw(
-      'Syntax Error GraphQL request (1:1) Cannot parse the unexpected character ".".',
+    expectSyntaxError('..', 'Cannot parse the unexpected character ".".', {
+      line: 1,
+      column: 1,
+    });
+
+    expectSyntaxError('?', 'Cannot parse the unexpected character "?".', {
+      line: 1,
+      column: 1,
+    });
+
+    expectSyntaxError(
+      '\u203B',
+      'Cannot parse the unexpected character "\\u203B".',
+      { line: 1, column: 1 },
     );
 
-    expect(() => lexOne('?')).to.throw(
-      'Syntax Error GraphQL request (1:1) Cannot parse the unexpected character "?".',
-    );
-
-    expect(() => lexOne('\u203B')).to.throw(
-      'Syntax Error GraphQL request (1:1) ' +
-        'Cannot parse the unexpected character "\\u203B".',
-    );
-
-    expect(() => lexOne('\u200b')).to.throw(
-      'Syntax Error GraphQL request (1:1) ' +
-        'Cannot parse the unexpected character "\\u200B".',
+    expectSyntaxError(
+      '\u200b',
+      'Cannot parse the unexpected character "\\u200B".',
+      { line: 1, column: 1 },
     );
   });
 
   it('lex reports useful information for dashes in names', () => {
-    const q = 'a-b';
-    const lexer = createLexer(new Source(q));
+    const source = new Source('a-b');
+    const lexer = createLexer(source);
     const firstToken = lexer.advance();
-    expect(firstToken).to.containSubset({
+    expect(firstToken).to.contain({
       kind: TokenKind.NAME,
       start: 0,
       end: 1,
       value: 'a',
     });
-    expect(() => lexer.advance()).to.throw(
-      'Syntax Error GraphQL request (1:3) Invalid number, expected digit but got: "b".',
-    );
+
+    expect(() => lexer.advance())
+      .throw(GraphQLError)
+      .that.deep.include({
+        message: 'Syntax Error: Invalid number, expected digit but got: "b".',
+        locations: [{ line: 1, column: 3 }],
+      });
   });
 
   it('produces double linked list of tokens, including comments', () => {
-    const lexer = createLexer(
-      new Source(`{
-      #comment
-      field
-    }`),
-    );
+    const source = new Source(`
+      {
+        #comment
+        field
+      }
+    `);
 
+    const lexer = createLexer(source);
     const startToken = lexer.token;
     let endToken;
     do {
       endToken = lexer.advance();
       // Lexer advances over ignored comment tokens to make writing parsers
       // easier, but will include them in the linked list result.
-      expect(endToken.kind).not.to.equal('Comment');
-    } while (endToken.kind !== '<EOF>');
+      expect(endToken.kind).not.to.equal(TokenKind.COMMENT);
+    } while (endToken.kind !== TokenKind.EOF);
 
     expect(startToken.prev).to.equal(null);
     expect(endToken.next).to.equal(null);
@@ -654,12 +753,40 @@ describe('Lexer', () => {
     }
 
     expect(tokens.map(tok => tok.kind)).to.deep.equal([
-      '<SOF>',
-      '{',
-      'Comment',
-      'Name',
-      '}',
-      '<EOF>',
+      TokenKind.SOF,
+      TokenKind.BRACE_L,
+      TokenKind.COMMENT,
+      TokenKind.NAME,
+      TokenKind.BRACE_R,
+      TokenKind.EOF,
     ]);
+  });
+});
+
+describe('isPunctuatorToken', () => {
+  it('returns true for punctuator tokens', () => {
+    expect(isPunctuatorToken(lexOne('!'))).to.equal(true);
+    expect(isPunctuatorToken(lexOne('$'))).to.equal(true);
+    expect(isPunctuatorToken(lexOne('&'))).to.equal(true);
+    expect(isPunctuatorToken(lexOne('('))).to.equal(true);
+    expect(isPunctuatorToken(lexOne(')'))).to.equal(true);
+    expect(isPunctuatorToken(lexOne('...'))).to.equal(true);
+    expect(isPunctuatorToken(lexOne(':'))).to.equal(true);
+    expect(isPunctuatorToken(lexOne('='))).to.equal(true);
+    expect(isPunctuatorToken(lexOne('@'))).to.equal(true);
+    expect(isPunctuatorToken(lexOne('['))).to.equal(true);
+    expect(isPunctuatorToken(lexOne(']'))).to.equal(true);
+    expect(isPunctuatorToken(lexOne('{'))).to.equal(true);
+    expect(isPunctuatorToken(lexOne('|'))).to.equal(true);
+    expect(isPunctuatorToken(lexOne('}'))).to.equal(true);
+  });
+
+  it('returns false for non-punctuator tokens', () => {
+    expect(isPunctuatorToken(lexOne(''))).to.equal(false);
+    expect(isPunctuatorToken(lexOne('name'))).to.equal(false);
+    expect(isPunctuatorToken(lexOne('1'))).to.equal(false);
+    expect(isPunctuatorToken(lexOne('3.14'))).to.equal(false);
+    expect(isPunctuatorToken(lexOne('"str"'))).to.equal(false);
+    expect(isPunctuatorToken(lexOne('"""str"""'))).to.equal(false);
   });
 });

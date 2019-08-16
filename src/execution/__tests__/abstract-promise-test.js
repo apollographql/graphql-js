@@ -1,24 +1,23 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// @flow strict
 
 import { expect } from 'chai';
 import { describe, it } from 'mocha';
+
+import { GraphQLSchema } from '../../type/schema';
+import { GraphQLString, GraphQLBoolean } from '../../type/scalars';
 import {
-  graphql,
-  GraphQLSchema,
+  GraphQLList,
   GraphQLObjectType,
   GraphQLInterfaceType,
   GraphQLUnionType,
-  GraphQLList,
-  GraphQLString,
-  GraphQLBoolean,
-} from '../../';
+} from '../../type/definition';
+
+import { graphql } from '../../graphql';
 
 class Dog {
+  name: string;
+  woofs: boolean;
+
   constructor(name, woofs) {
     this.name = name;
     this.woofs = woofs;
@@ -26,6 +25,9 @@ class Dog {
 }
 
 class Cat {
+  name: string;
+  meows: boolean;
+
   constructor(name, meows) {
     this.name = name;
     this.meows = meows;
@@ -33,6 +35,8 @@ class Cat {
 }
 
 class Human {
+  name: string;
+
   constructor(name) {
     this.name = name;
   }
@@ -72,7 +76,7 @@ describe('Execute: Handles execution of abstract types with promises', () => {
         name: 'Query',
         fields: {
           pets: {
-            type: new GraphQLList(PetType),
+            type: GraphQLList(PetType),
             resolve() {
               return [new Dog('Odie', true), new Cat('Garfield', false)];
             },
@@ -145,7 +149,7 @@ describe('Execute: Handles execution of abstract types with promises', () => {
         name: 'Query',
         fields: {
           pets: {
-            type: new GraphQLList(PetType),
+            type: GraphQLList(PetType),
             resolve() {
               return [new Dog('Odie', true), new Cat('Garfield', false)];
             },
@@ -217,7 +221,7 @@ describe('Execute: Handles execution of abstract types with promises', () => {
         name: 'Query',
         fields: {
           pets: {
-            type: new GraphQLList(PetType),
+            type: GraphQLList(PetType),
             resolve() {
               return [new Dog('Odie', true), new Cat('Garfield', false)];
             },
@@ -265,8 +269,10 @@ describe('Execute: Handles execution of abstract types with promises', () => {
           obj instanceof Dog
             ? DogType
             : obj instanceof Cat
-              ? CatType
-              : obj instanceof Human ? HumanType : null,
+            ? CatType
+            : obj instanceof Human
+            ? HumanType
+            : null,
         );
       },
       fields: {
@@ -304,7 +310,7 @@ describe('Execute: Handles execution of abstract types with promises', () => {
         name: 'Query',
         fields: {
           pets: {
-            type: new GraphQLList(PetType),
+            type: GraphQLList(PetType),
             resolve() {
               return Promise.resolve([
                 new Dog('Odie', true),
@@ -332,7 +338,7 @@ describe('Execute: Handles execution of abstract types with promises', () => {
 
     const result = await graphql(schema, query);
 
-    expect(result).to.jsonEqual({
+    expect(result).to.deep.equal({
       data: {
         pets: [
           {
@@ -388,8 +394,10 @@ describe('Execute: Handles execution of abstract types with promises', () => {
           obj instanceof Dog
             ? DogType
             : obj instanceof Cat
-              ? CatType
-              : obj instanceof Human ? HumanType : null,
+            ? CatType
+            : obj instanceof Human
+            ? HumanType
+            : null,
         );
       },
       types: [DogType, CatType],
@@ -400,7 +408,7 @@ describe('Execute: Handles execution of abstract types with promises', () => {
         name: 'Query',
         fields: {
           pets: {
-            type: new GraphQLList(PetType),
+            type: GraphQLList(PetType),
             resolve() {
               return [
                 new Dog('Odie', true),
@@ -428,7 +436,7 @@ describe('Execute: Handles execution of abstract types with promises', () => {
 
     const result = await graphql(schema, query);
 
-    expect(result).to.jsonEqual({
+    expect(result).to.deep.equal({
       data: {
         pets: [
           {
@@ -489,7 +497,7 @@ describe('Execute: Handles execution of abstract types with promises', () => {
         name: 'Query',
         fields: {
           pets: {
-            type: new GraphQLList(PetType),
+            type: GraphQLList(PetType),
             resolve() {
               return [new Dog('Odie', true), new Cat('Garfield', false)];
             },
@@ -513,7 +521,7 @@ describe('Execute: Handles execution of abstract types with promises', () => {
 
     const result = await graphql(schema, query);
 
-    expect(result).to.jsonEqual({
+    expect(result).to.deep.equal({
       data: {
         pets: [
           {
@@ -532,7 +540,7 @@ describe('Execute: Handles execution of abstract types with promises', () => {
   it('resolveType can be caught', async () => {
     const PetType = new GraphQLInterfaceType({
       name: 'Pet',
-      resolveType: () => Promise.reject('We are testing this error'),
+      resolveType: () => Promise.reject(new Error('We are testing this error')),
       fields: {
         name: { type: GraphQLString },
       },
@@ -561,7 +569,7 @@ describe('Execute: Handles execution of abstract types with promises', () => {
         name: 'Query',
         fields: {
           pets: {
-            type: new GraphQLList(PetType),
+            type: GraphQLList(PetType),
             resolve() {
               return [new Dog('Odie', true), new Cat('Garfield', false)];
             },
@@ -585,7 +593,7 @@ describe('Execute: Handles execution of abstract types with promises', () => {
 
     const result = await graphql(schema, query);
 
-    expect(result).to.jsonEqual({
+    expect(result).to.deep.equal({
       data: {
         pets: [null, null],
       },

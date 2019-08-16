@@ -1,14 +1,9 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import type { ValidationContext } from '../index';
-import { GraphQLError } from '../../error';
+import { GraphQLError } from '../../error/GraphQLError';
+import { type ASTVisitor } from '../../language/visitor';
+
+import { type ValidationContext } from '../ValidationContext';
 
 export function undefinedVarMessage(varName: string, opName: ?string): string {
   return opName
@@ -22,7 +17,7 @@ export function undefinedVarMessage(varName: string, opName: ?string): string {
  * A GraphQL operation is only valid if all variables encountered, both directly
  * and via fragment spreads, are defined by that operation.
  */
-export function NoUndefinedVariables(context: ValidationContext): any {
+export function NoUndefinedVariables(context: ValidationContext): ASTVisitor {
   let variableNameDefined = Object.create(null);
 
   return {
@@ -33,7 +28,7 @@ export function NoUndefinedVariables(context: ValidationContext): any {
       leave(operation) {
         const usages = context.getRecursiveVariableUsages(operation);
 
-        usages.forEach(({ node }) => {
+        for (const { node } of usages) {
           const varName = node.name.value;
           if (variableNameDefined[varName] !== true) {
             context.reportError(
@@ -46,7 +41,7 @@ export function NoUndefinedVariables(context: ValidationContext): any {
               ),
             );
           }
-        });
+        }
       },
     },
     VariableDefinition(node) {

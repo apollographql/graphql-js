@@ -1,18 +1,16 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
-import type { ValidationContext } from '../index';
-import { GraphQLError } from '../../error';
-import type { VariableDefinitionNode } from '../../language/ast';
+import { GraphQLError } from '../../error/GraphQLError';
+
 import { print } from '../../language/printer';
+import { type ASTVisitor } from '../../language/visitor';
+import { type VariableDefinitionNode } from '../../language/ast';
+
 import { isInputType } from '../../type/definition';
+
 import { typeFromAST } from '../../utilities/typeFromAST';
+
+import { type ValidationContext } from '../ValidationContext';
 
 export function nonInputTypeOnVarMessage(
   variableName: string,
@@ -27,7 +25,7 @@ export function nonInputTypeOnVarMessage(
  * A GraphQL operation is only valid if all the variables it defines are of
  * input types (scalar, enum, or input object).
  */
-export function VariablesAreInputTypes(context: ValidationContext): any {
+export function VariablesAreInputTypes(context: ValidationContext): ASTVisitor {
   return {
     VariableDefinition(node: VariableDefinitionNode): ?GraphQLError {
       const type = typeFromAST(context.getSchema(), node.type);
@@ -38,7 +36,7 @@ export function VariablesAreInputTypes(context: ValidationContext): any {
         context.reportError(
           new GraphQLError(
             nonInputTypeOnVarMessage(variableName, print(node.type)),
-            [node.type],
+            node.type,
           ),
         );
       }

@@ -1,17 +1,13 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
 import { GraphQLError } from '../error/GraphQLError';
+
+import { type DocumentNode } from '../language/ast';
 import { visit, visitWithTypeInfo } from '../language/visitor';
-import type { DocumentNode } from '../language/ast';
+
 import { getNamedType } from '../type/definition';
-import { GraphQLSchema } from '../type/schema';
+import { type GraphQLSchema } from '../type/schema';
+
 import { TypeInfo } from './TypeInfo';
 
 /**
@@ -39,7 +35,7 @@ export function findDeprecatedUsages(
               new GraphQLError(
                 `The field ${parentType.name}.${fieldDef.name} is deprecated.` +
                   (reason ? ' ' + reason : ''),
-                [node],
+                node,
               ),
             );
           }
@@ -55,7 +51,7 @@ export function findDeprecatedUsages(
               new GraphQLError(
                 `The enum value ${type.name}.${enumVal.name} is deprecated.` +
                   (reason ? ' ' + reason : ''),
-                [node],
+                node,
               ),
             );
           }

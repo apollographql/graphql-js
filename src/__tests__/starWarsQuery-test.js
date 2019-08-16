@@ -1,19 +1,11 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
 
 import { expect } from 'chai';
 import { describe, it } from 'mocha';
-import { StarWarsSchema } from './starWarsSchema.js';
+
 import { graphql } from '../graphql';
 
-// 80+ char lines are useful in describe/it, so ignore in this file.
-/* eslint-disable max-len */
+import { StarWarsSchema } from './starWarsSchema';
 
 describe('Star Wars Query Tests', () => {
   describe('Basic Queries', () => {

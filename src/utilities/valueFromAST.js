@@ -1,31 +1,24 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- *
- * @flow
- */
+// @flow strict
+
+import objectValues from '../polyfills/objectValues';
 
 import keyMap from '../jsutils/keyMap';
+import inspect from '../jsutils/inspect';
 import invariant from '../jsutils/invariant';
 import isInvalid from '../jsutils/isInvalid';
-import type { ObjMap } from '../jsutils/ObjMap';
-import * as Kind from '../language/kinds';
+import { type ObjMap } from '../jsutils/ObjMap';
+
+import { Kind } from '../language/kinds';
+import { type ValueNode } from '../language/ast';
+
 import {
-  GraphQLScalarType,
-  GraphQLEnumType,
-  GraphQLInputObjectType,
-  GraphQLList,
-  GraphQLNonNull,
+  type GraphQLInputType,
+  isScalarType,
+  isEnumType,
+  isInputObjectType,
+  isListType,
+  isNonNullType,
 } from '../type/definition';
-import type { GraphQLInputType } from '../type/definition';
-import type {
-  ValueNode,
-  VariableNode,
-  ListValueNode,
-  ObjectValueNode,
-} from '../language/ast';
 
 /**
  * Produces a JavaScript value given a GraphQL Value AST.
@@ -58,7 +51,7 @@ export function valueFromAST(
     return;
   }
 
-  if (type instanceof GraphQLNonNull) {
+  if (isNonNullType(type)) {
     if (valueNode.kind === Kind.NULL) {
       return; // Invalid: intentionally return no value.
     }
@@ -71,32 +64,35 @@ export function valueFromAST(
   }
 
   if (valueNode.kind === Kind.VARIABLE) {
-    const variableName = (valueNode: VariableNode).name.value;
+    const variableName = valueNode.name.value;
     if (!variables || isInvalid(variables[variableName])) {
       // No valid return value.
       return;
     }
-    // Note: we're not doing any checking that this variable is correct. We're
-    // assuming that this query has been validated and the variable usage here
-    // is of the correct type.
-    return variables[variableName];
+    const variableValue = variables[variableName];
+    if (variableValue === null && isNonNullType(type)) {
+      return; // Invalid: intentionally return no value.
+    }
+    // Note: This does no further checking that this variable is correct.
+    // This assumes that this query has been validated and the variable
+    // usage here is of the correct type.
+    return variableValue;
   }
 
-  if (type instanceof GraphQLList) {
+  if (isListType(type)) {
     const itemType = type.ofType;
     if (valueNode.kind === Kind.LIST) {
       const coercedValues = [];
-      const itemNodes = (valueNode: ListValueNode).values;
-      for (let i = 0; i < itemNodes.length; i++) {
-        if (isMissingVariable(itemNodes[i], variables)) {
+      for (const itemNode of valueNode.values) {
+        if (isMissingVariable(itemNode, variables)) {
           // If an array contains a missing variable, it is either coerced to
           // null or if the item type is non-null, it considered invalid.
-          if (itemType instanceof GraphQLNonNull) {
+          if (isNonNullType(itemType)) {
             return; // Invalid: intentionally return no value.
           }
           coercedValues.push(null);
         } else {
-          const itemValue = valueFromAST(itemNodes[i], itemType, variables);
+          const itemValue = valueFromAST(itemNode, itemType, variables);
           if (isInvalid(itemValue)) {
             return; // Invalid: intentionally return no value.
           }
@@ -112,25 +108,18 @@ export function valueFromAST(
     return [coercedValue];
   }
 
-  if (type instanceof GraphQLInputObjectType) {
+  if (isInputObjectType(type)) {
     if (valueNode.kind !== Kind.OBJECT) {
       return; // Invalid: intentionally return no value.
     }
     const coercedObj = Object.create(null);
-    const fields = type.getFields();
-    const fieldNodes = keyMap(
-      (valueNode: ObjectValueNode).fields,
-      field => field.name.value,
-    );
-    const fieldNames = Object.keys(fields);
-    for (let i = 0; i < fieldNames.length; i++) {
-      const fieldName = fieldNames[i];
-      const field = fields[fieldName];
-      const fieldNode = fieldNodes[fieldName];
+    const fieldNodes = keyMap(valueNode.fields, field => field.name.value);
+    for (const field of objectValues(type.getFields())) {
+      const fieldNode = fieldNodes[field.name];
       if (!fieldNode || isMissingVariable(fieldNode.value, variables)) {
-        if (!isInvalid(field.defaultValue)) {
-          coercedObj[fieldName] = field.defaultValue;
-        } else if (field.type instanceof GraphQLNonNull) {
+        if (field.defaultValue !== undefined) {
+          coercedObj[field.name] = field.defaultValue;
+        } else if (isNonNullType(field.type)) {
           return; // Invalid: intentionally return no value.
         }
         continue;
@@ -139,23 +128,40 @@ export function valueFromAST(
       if (isInvalid(fieldValue)) {
         return; // Invalid: intentionally return no value.
       }
-      coercedObj[fieldName] = fieldValue;
+      coercedObj[field.name] = fieldValue;
     }
     return coercedObj;
   }
 
-  invariant(
-    type instanceof GraphQLScalarType || type instanceof GraphQLEnumType,
-    'Must be input type',
-  );
-
-  // Scalar and Enum values implement methods which perform this translation.
-  if (type.isValidLiteral(valueNode, variables)) {
-    return type.parseLiteral(valueNode, variables);
+  if (isEnumType(type)) {
+    if (valueNode.kind !== Kind.ENUM) {
+      return; // Invalid: intentionally return no value.
+    }
+    const enumValue = type.getValue(valueNode.value);
+    if (!enumValue) {
+      return; // Invalid: intentionally return no value.
+    }
+    return enumValue.value;
   }
 
-  // Invalid values represent a failure to parse correctly, in which case
-  // no value is returned.
+  if (isScalarType(type)) {
+    // Scalars fulfill parsing a literal value via parseLiteral().
+    // Invalid values represent a failure to parse correctly, in which case
+    // no value is returned.
+    let result;
+    try {
+      result = type.parseLiteral(valueNode, variables);
+    } catch (_error) {
+      return; // Invalid: intentionally return no value.
+    }
+    if (isInvalid(result)) {
+      return; // Invalid: intentionally return no value.
+    }
+    return result;
+  }
+
+  // Not reachable. All possible input types have been considered.
+  invariant(false, 'Unexpected input type: ' + inspect((type: empty)));
 }
 
 // Returns true if the provided valueNode is a variable which is not defined
@@ -163,6 +169,6 @@ export function valueFromAST(
 function isMissingVariable(valueNode, variables) {
   return (
     valueNode.kind === Kind.VARIABLE &&
-    (!variables || isInvalid(variables[(valueNode: VariableNode).name.value]))
+    (!variables || isInvalid(variables[valueNode.name.value]))
   );
 }

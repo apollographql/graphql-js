@@ -1,14 +1,9 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// @flow strict
 
 import { expect } from 'chai';
 import { describe, it } from 'mocha';
 
-import { GraphQLError } from '../../';
+import { GraphQLError } from '../GraphQLError';
 import { locatedError } from '../locatedError';
 
 describe('locatedError', () => {
@@ -24,7 +19,7 @@ describe('locatedError', () => {
   });
 
   it('passes GraphQLError-ish through', () => {
-    const e = new Error('I have a different prototype chain');
+    const e: any = new Error('I have a different prototype chain');
     e.locations = [];
     e.path = [];
     e.nodes = [];
@@ -36,7 +31,7 @@ describe('locatedError', () => {
   });
 
   it('does not pass through elasticsearch-like errors', () => {
-    const e = new Error('I am from elasticsearch');
+    const e: any = new Error('I am from elasticsearch');
     e.path = '/something/feed/_search';
 
     expect(locatedError(e, [], [])).to.not.deep.equal(e);
