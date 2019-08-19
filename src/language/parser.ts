@@ -764,10 +764,11 @@ class Parser {
   /**
    * Description : StringValue
    */
-  parseDescription(): void | StringValueNode {
+  parseDescription(): undefined | StringValueNode {
     if (this.peekDescription()) {
       return this.parseStringLiteral();
     }
+    return undefined;
   }
 
   /**
@@ -1387,10 +1388,11 @@ class Parser {
    * Returns a location object, used to identify the place in
    * the source that created a given parsed object.
    */
-  loc(startToken: Token): Location | void {
+  loc(startToken: Token): Location | undefined {
     if (!this._options.noLocation) {
       return new Loc(startToken, this._lexer.lastToken, this._lexer.source);
     }
+    return undefined;
   }
 
   /**
