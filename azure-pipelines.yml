@@ -116,7 +116,7 @@ stages:
                   displayName: 'Download Pipeline Artifact'
                   inputs:
                     artifactName: npm
-                    targetPath: '$(System.DefaultWorkingDirectory)'
+                    targetPath: '$(System.DefaultWorkingDirectory)/npm'
 
                 - task: ExtractFiles@1
                   displayName: 'Extract package'
