@@ -95,7 +95,7 @@ stages:
   - stage: Publish
     condition: and(succeeded(), startsWith(variables['Build.SourceBranch'], 'refs/tags/v'))
     jobs:
-      - job: publish
+      - job: Publish
 
         pool:
           vmImage: 'ubuntu-16.04'
@@ -155,5 +155,7 @@ stages:
               releaseNotes: 'Published to https://www.npmjs.com/package/$(packageName)/v/$(packageVersion)'
               assets: '$(System.DefaultWorkingDirectory)/npm/*.tgz'
 
-          - bash: 'curl --show-error --fail -X POST -H ''Content-type: application/json'' --data ''{"text":"Version `$(packageVersion)` of `$(packageName)` has been released :rocket:\n\nGitHub: https://github.com/apollographql/graphql-js/releases/tag/v$(packageVersion)\nnpm: https://www.npmjs.com/package/$(packageName)/v/$(packageVersion)"}'' $(APOLLO_SLACK_HOOK_URL)'
+          - bash: 'curl --show-error --fail -X POST -H ''Content-type: application/json'' --data ''{"text":"Version `$(packageVersion)` of `$(packageName)` has been released :rocket:\n\nGitHub: https://github.com/apollographql/graphql-js/releases/tag/v$(packageVersion)\nnpm: https://www.npmjs.com/package/$(packageName)/v/$(packageVersion)"}'' $HOOK_URL'
             displayName: 'Slack webhook'
+            env:
+              HOOK_URL: $(APOLLO_SLACK_HOOK_URL)
