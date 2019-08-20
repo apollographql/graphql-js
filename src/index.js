@@ -417,6 +417,9 @@ export {
   findDeprecatedUsages,
 } from './utilities';
 
+import instanceOf from './jsutils/instanceOf';
+export { instanceOf };
+
 export type {
   IntrospectionOptions,
   IntrospectionQuery,

@@ -414,3 +414,6 @@ export {
   IntrospectionTypeRef,
   IntrospectionUnionType,
 } from './utilities/index.d';
+
+import instanceOf from './jsutils/instanceOf';
+export { instanceOf };
