@@ -98,6 +98,7 @@ stages:
       - deployment: PublishNpmModule
         displayName: Publish
         continueOnError: true
+        environment: 'publish-graphql-js'
 
         pool:
           vmImage: 'ubuntu-16.04'
