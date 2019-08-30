@@ -1,6 +1,6 @@
 {
-  "name": "graphql",
-  "version": "14.5.4",
+  "name": "@apollo/graphql",
+  "version": "14.5.0",
   "description": "A Query Language and Runtime which can target any service.",
   "license": "MIT",
   "private": true,
@@ -8,13 +8,13 @@
   "module": "index.mjs",
   "types": "index.d.ts",
   "sideEffects": false,
-  "homepage": "https://github.com/graphql/graphql-js",
+  "homepage": "https://github.com/apollographql/graphql-js",
   "bugs": {
-    "url": "https://github.com/graphql/graphql-js/issues"
+    "url": "https://github.com/apollographql/graphql-js/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/graphql/graphql-js.git"
+    "url": "https://github.com/apollographql/graphql-js.git"
   },
   "keywords": [
     "graphql",
@@ -25,7 +25,7 @@
   },
   "scripts": {
     "test": "npm run prettier:check && npm run lint && npm run check && npm run testonly",
-    "test:ci": "yarn check --integrity && npm run prettier:check && npm run lint -- --no-cache && npm run check && npm run testonly:cover && npm run build",
+    "test:ci": "npm run prettier:check && npm run lint -- --no-cache && npm run check && npm run testonly:cover && npm run build",
     "testonly": "mocha --full-trace src/**/__tests__/**/*-test.{ts,js}",
     "testonly:cover": "nyc npm run testonly",
     "lint": "npm run lint:flow && npm run lint:ts",

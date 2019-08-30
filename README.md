@@ -1,10 +1,11 @@
 # GraphQL.js
 
-The JavaScript reference implementation for GraphQL, a query language for APIs created by Facebook.
+A JavaScript implementation of GraphQL, a query language for APIs created by Facebook.
 
-[![npm version](https://badge.fury.io/js/graphql.svg)](https://badge.fury.io/js/graphql)
-[![Build Status](https://travis-ci.org/graphql/graphql-js.svg?branch=master)](https://travis-ci.org/graphql/graphql-js?branch=master)
-[![Coverage Status](https://codecov.io/gh/graphql/graphql-js/branch/master/graph/badge.svg)](https://codecov.io/gh/graphql/graphql-js)
+[![Build Status](https://dev.azure.com/apollographql/graphql-js/_apis/build/status/apollographql.graphql-js?branchName=master)](https://dev.azure.com/apollographql/graphql-js/_build/latest?definitionId=2&branchName=master)
+[![npm version](https://badge.fury.io/js/%40apollo%2Fgraphql.svg)](https://badge.fury.io/js/%40apollo%2Fgraphql)
+
+The purpose of this fork is to increase the velocity with which we at Apollo are able to improve the `graphql` implementation, while also gradually converting it from Flow to TypeScript.
 
 See more complete documentation at https://graphql.org/ and
 https://graphql.org/graphql-js/.
@@ -24,16 +25,8 @@ through that README and the corresponding tests in parallel.
 
 Install GraphQL.js from npm
 
-With yarn:
-
 ```sh
-yarn add graphql
-```
-
-or alternatively using npm:
-
-```sh
-npm install --save graphql
+npm install --save @apollo/graphql
 ```
 
 GraphQL.js provides two important capabilities: building a type schema, and
@@ -47,7 +40,7 @@ import {
   GraphQLSchema,
   GraphQLObjectType,
   GraphQLString,
-} from 'graphql';
+} from '@apollo/graphql';
 
 var schema = new GraphQLSchema({
   query: new GraphQLObjectType({
@@ -102,18 +95,6 @@ graphql(schema, query).then(result => {
 });
 ```
 
-### Want to ride the bleeding edge?
-
-The `npm` branch in this repository is automatically maintained to be the last
-commit to `master` to pass all tests, in the same form found on npm. It is
-recommended to use builds deployed to npm for many reasons, but if you want to use
-the latest not-yet-released version of graphql-js, you can do so by depending
-directly on this branch:
-
-```
-npm install graphql@git://github.com/graphql/graphql-js.git#npm
-```
-
 ### Using in a Browser
 
 GraphQL.js is a general purpose library and can be used both in a Node server
@@ -128,8 +109,7 @@ custom build configurations look for `.mjs` files!
 
 ### Contributing
 
-We actively welcome pull requests, learn how to
-[contribute](https://github.com/graphql/graphql-js/blob/master/.github/CONTRIBUTING.md).
+[Read the Apollo Contributor Guidelines.](https://github.com/apollographql/graphql-js/blob/master/.github/CONTRIBUTING.md)
 
 ### Changelog
 
