@@ -17,5 +17,8 @@
     "unified-signatures": false,
     "use-default-type-parameter": false,
     "void-return": false
+  },
+  "linterOptions": {
+    "exclude": ["**/*[!.]?.ts", "**/*.js"]
   }
 }

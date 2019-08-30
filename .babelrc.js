@@ -3,6 +3,7 @@ module.exports = {
   plugins: [
     './resources/inline-invariant',
     '@babel/plugin-transform-flow-strip-types',
+    '@babel/plugin-proposal-class-properties',
     ['@babel/plugin-transform-classes', { loose: true }],
     ['@babel/plugin-transform-destructuring', { loose: true }],
     ['@babel/plugin-transform-spread', { loose: true }],

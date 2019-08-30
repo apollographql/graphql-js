@@ -1,6 +1,7 @@
 // @flow strict
 
 import objectEntries from '../polyfills/objectEntries';
+import { originModule } from '../version';
 
 import inspect from '../jsutils/inspect';
 import toObjMap from '../jsutils/toObjMap';
@@ -53,6 +54,8 @@ export function assertDirective(directive: mixed): GraphQLDirective {
  * behavior. Type system creators will usually not create these directly.
  */
 export class GraphQLDirective {
+  static ORIGIN_MODULE = originModule;
+
   name: string;
   description: ?string;
   locations: Array<DirectiveLocationEnum>;

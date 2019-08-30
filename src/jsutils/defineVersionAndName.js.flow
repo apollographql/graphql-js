@@ -1,0 +1,8 @@
+// @flow strict
+
+/**
+ * Adds this package's VERSION and NAME to the given object, under VERSIOn and NAME fields, respectively
+ */
+declare function defineVersionAndName(value: mixed): void;
+
+declare module.exports: typeof defineVersionAndName;

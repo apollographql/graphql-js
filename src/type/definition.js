@@ -1,6 +1,7 @@
 // @flow strict
 
 import objectEntries from '../polyfills/objectEntries';
+import { originModule } from '../version';
 
 import inspect from '../jsutils/inspect';
 import keyMap from '../jsutils/keyMap';
@@ -14,6 +15,7 @@ import isObjectLike from '../jsutils/isObjectLike';
 import identityFunc from '../jsutils/identityFunc';
 import defineToJSON from '../jsutils/defineToJSON';
 import defineToStringTag from '../jsutils/defineToStringTag';
+import defineVersionAndName from '../jsutils/defineVersionAndName';
 import { type PromiseOrValue } from '../jsutils/PromiseOrValue';
 import {
   type ObjMap,
@@ -344,6 +346,9 @@ export function assertAbstractType(type: mixed): GraphQLAbstractType {
  */
 declare class GraphQLList<+T: GraphQLType> {
   +ofType: T;
+
+  static ORIGIN_MODULE: string;
+
   static <T>(ofType: T): GraphQLList<T>;
   // Note: constructors cannot be used for covariant types. Drop the "new".
   constructor(ofType: GraphQLType): void;
@@ -361,6 +366,8 @@ export function GraphQLList(ofType) {
 (GraphQLList.prototype: any).toString = function toString() {
   return '[' + String(this.ofType) + ']';
 };
+
+defineVersionAndName(GraphQLList);
 
 // Conditionally apply `[Symbol.toStringTag]` if `Symbol`s are supported
 defineToStringTag(GraphQLList);
@@ -388,6 +395,9 @@ defineToJSON(GraphQLList);
  */
 declare class GraphQLNonNull<+T: GraphQLNullableType> {
   +ofType: T;
+
+  static ORIGIN_MODULE: string;
+
   static <T>(ofType: T): GraphQLNonNull<T>;
   // Note: constructors cannot be used for covariant types. Drop the "new".
   constructor(ofType: GraphQLType): void;
@@ -405,6 +415,8 @@ export function GraphQLNonNull(ofType) {
 (GraphQLNonNull.prototype: any).toString = function toString() {
   return String(this.ofType) + '!';
 };
+
+defineVersionAndName(GraphQLList);
 
 // Conditionally apply `[Symbol.toStringTag]` if `Symbol`s are supported
 defineToStringTag(GraphQLNonNull);
@@ -544,6 +556,8 @@ function undefineIfEmpty<T>(arr: ?$ReadOnlyArray<T>): ?$ReadOnlyArray<T> {
  *
  */
 export class GraphQLScalarType {
+  static ORIGIN_MODULE = originModule;
+
   name: string;
   description: ?string;
   serialize: GraphQLScalarSerializer<*>;
@@ -668,6 +682,8 @@ export type GraphQLScalarTypeConfig<TInternal, TExternal> = {|
  *
  */
 export class GraphQLObjectType {
+  static ORIGIN_MODULE = originModule;
+
   name: string;
   description: ?string;
   isTypeOf: ?GraphQLIsTypeOfFn<*, *>;
@@ -968,6 +984,8 @@ export type GraphQLFieldMap<TSource, TContext> = ObjMap<
  *
  */
 export class GraphQLInterfaceType {
+  static ORIGIN_MODULE = originModule;
+
   name: string;
   description: ?string;
   resolveType: ?GraphQLTypeResolver<*, *>;
@@ -1066,6 +1084,8 @@ export type GraphQLInterfaceTypeConfig<TSource, TContext> = {|
  *
  */
 export class GraphQLUnionType {
+  static ORIGIN_MODULE = originModule;
+
   name: string;
   description: ?string;
   resolveType: ?GraphQLTypeResolver<*, *>;
@@ -1173,6 +1193,8 @@ export type GraphQLUnionTypeConfig<TSource, TContext> = {|
  * will be used as its internal value.
  */
 export class GraphQLEnumType /* <T> */ {
+  static ORIGIN_MODULE = originModule;
+
   name: string;
   description: ?string;
   extensions: ?ReadOnlyObjMap<mixed>;
@@ -1349,6 +1371,8 @@ export type GraphQLEnumValue /* <T> */ = {|
  *
  */
 export class GraphQLInputObjectType {
+  static ORIGIN_MODULE = originModule;
+
   name: string;
   description: ?string;
   extensions: ?ReadOnlyObjMap<mixed>;

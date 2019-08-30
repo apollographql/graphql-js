@@ -1,4 +1,9 @@
 /**
+ * The publish name of this GraphQL.js library
+ */
+export const originModule: string;
+
+/**
  * A string containing the version of the GraphQL.js library
  */
 export const version: string;

@@ -6,6 +6,11 @@
  */
 
 /**
+ * The publish name of this library
+ */
+export const originModule = '@apollo/graphql@14.5.0';
+
+/**
  * A string containing the version of the GraphQL.js library
  */
 export const version = '14.5.0';

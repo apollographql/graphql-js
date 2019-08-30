@@ -3,6 +3,8 @@
 import find from '../polyfills/find';
 import objectValues from '../polyfills/objectValues';
 
+import { originModule } from '../version';
+
 import inspect from '../jsutils/inspect';
 import toObjMap from '../jsutils/toObjMap';
 import devAssert from '../jsutils/devAssert';
@@ -120,6 +122,8 @@ export function assertSchema(schema: mixed): GraphQLSchema {
  *
  */
 export class GraphQLSchema {
+  static ORIGIN_MODULE = originModule;
+
   extensions: ?ReadOnlyObjMap<mixed>;
   astNode: ?SchemaDefinitionNode;
   extensionASTNodes: ?$ReadOnlyArray<SchemaExtensionNode>;

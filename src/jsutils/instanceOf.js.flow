@@ -1,0 +1,12 @@
+// @flow strict
+
+/**
+ * A replacement for instanceof which includes an error warning when multi-realm
+ * constructors are detected.
+ */
+declare function instanceOf(
+  value: mixed,
+  constructor: { ORIGIN_MODULE: string, ... },
+): boolean %checks(value instanceof constructor);
+
+declare module.exports: typeof instanceOf;
