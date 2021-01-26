@@ -23,7 +23,8 @@ export default process.env.NODE_ENV === 'production'
         return true;
       }
       if (value) {
-        const classTag = constructor?.prototype?.[SYMBOL_TO_STRING_TAG];
+        const proto = constructor && constructor.prototype;
+        const classTag = proto && proto[SYMBOL_TO_STRING_TAG];
         const className = classTag || constructor.name;
         // When the constructor class defines a Symbol.toStringTag
         // property, as most classes exported by graphql-js do, use it
@@ -38,7 +39,7 @@ export default process.env.NODE_ENV === 'production'
         // value is legitimately _not_ instanceof constructor.
         const valueName = classTag
           ? value[SYMBOL_TO_STRING_TAG]
-          : value.constructor?.name;
+          : value.constructor && value.constructor.name;
         if (typeof className === 'string' && valueName === className) {
           throw new Error(
             `Cannot use ${className} "${value}" from another module or realm.
